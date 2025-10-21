@@ -1,0 +1,175 @@
+﻿
+### ====================================
+### 16. OBTER BARREIRAS DE UM COE
+### ====================================
+
+GET https://localhost:7000/api/coe/00000000-0000-0000-0000-000000000001/barreiras
+Accept: application/json
+
+### ====================================
+### OBSERVAÇÕES:
+### ====================================
+### - Ajuste a porta (7000) conforme sua configuração
+### - Os GUIDs devem ser substituídos pelos IDs reais retornados pelo banco
+### - Execute o script init.sql antes de testar
+### - Os eventos publicados disparam automaticamente os observadores
+### - As sagas podem ser iniciadas diretamente ou via eventos
+### Orquestrador Saga Carteira COE - Exemplos de Requisições
+
+### ====================================
+### 1. CONSULTAR COEs CADASTRADOS
+### ====================================
+
+GET https://localhost:7000/api/coe
+Accept: application/json
+
+### ====================================
+### 2. PUBLICAR EVENTO DE MTM (Simula Consumer)
+### ====================================
+
+POST https://localhost:7000/api/eventos/mtm
+Content-Type: application/json
+
+{
+  "coeId": "00000000-0000-0000-0000-000000000001",
+  "dataReferencia": "2025-10-21"
+}
+
+### ====================================
+### 3. INICIAR SAGA DE VALORIZAÇÃO MTM (Diretamente)
+### ====================================
+
+POST https://localhost:7000/api/saga/valorizacao-mtm
+Content-Type: application/json
+
+{
+  "coeId": "00000000-0000-0000-0000-000000000001",
+  "dataReferencia": "2025-10-21"
+}
+
+### ====================================
+### 4. PROCESSAR COTAÇÃO
+### ====================================
+
+POST https://localhost:7000/api/saga/processar-cotacao
+Content-Type: application/json
+
+{
+  "codigoAtivo": "PETR4",
+  "tipoAtivo": "ACAO",
+  "dataReferencia": "2025-10-21",
+  "precoAbertura": 38.20,
+  "precoFechamento": 38.50,
+  "precoMaximo": 38.80,
+  "precoMinimo": 38.10,
+  "volume": 15000000
+}
+
+### ====================================
+### 5. PUBLICAR EVENTO DE COTAÇÃO
+### ====================================
+
+POST https://localhost:7000/api/eventos/cotacao
+Content-Type: application/json
+
+{
+  "codigoAtivo": "PETR4",
+  "precoFechamento": 38.50,
+  "dataReferencia": "2025-10-21"
+}
+
+### ====================================
+### 6. PUBLICAR EVENTO DE BARREIRA
+### ====================================
+
+POST https://localhost:7000/api/eventos/barreira
+Content-Type: application/json
+
+{
+  "barreiraId": "00000000-0000-0000-0000-000000000002",
+  "coeId": "00000000-0000-0000-0000-000000000001",
+  "tipoBarreira": "Autocall",
+  "dataObservacao": "2025-10-21"
+}
+
+### ====================================
+### 7. INICIAR SAGA DE AUTOCALL
+### ====================================
+
+POST https://localhost:7000/api/saga/autocall
+Content-Type: application/json
+
+{
+  "coeId": "00000000-0000-0000-0000-000000000001",
+  "barreiraId": "00000000-0000-0000-0000-000000000002",
+  "dataLiquidacao": "2025-10-25"
+}
+
+### ====================================
+### 8. PUBLICAR EVENTO CORPORATIVO (SPLIT)
+### ====================================
+
+POST https://localhost:7000/api/eventos/evento-corporativo
+Content-Type: application/json
+
+{
+  "eventoId": "00000000-0000-0000-0000-000000000003",
+  "tipoEvento": "Split",
+  "codigoAtivo": "PETR4",
+  "fatorAjuste": 2.0
+}
+
+### ====================================
+### 9. INICIAR SAGA DE EVENTO CORPORATIVO
+### ====================================
+
+POST https://localhost:7000/api/saga/evento-corporativo
+Content-Type: application/json
+
+{
+  "eventoId": "00000000-0000-0000-0000-000000000003",
+  "tipoEvento": "Split"
+}
+
+### ====================================
+### 10. LISTAR TODAS AS SAGAS
+### ====================================
+
+GET https://localhost:7000/api/saga?pagina=1&tamanhoPagina=50
+Accept: application/json
+
+### ====================================
+### 11. CONSULTAR SAGA ESPECÍFICA
+### ====================================
+
+GET https://localhost:7000/api/saga/00000000-0000-0000-0000-000000000001
+Accept: application/json
+
+### ====================================
+### 12. FORÇAR COMPENSAÇÃO DE UMA SAGA
+### ====================================
+
+POST https://localhost:7000/api/saga/00000000-0000-0000-0000-000000000001/compensar
+Content-Type: application/json
+
+### ====================================
+### 13. EXECUTAR PRÓXIMA ETAPA (Debug)
+### ====================================
+
+POST https://localhost:7000/api/saga/00000000-0000-0000-0000-000000000001/executar-proxima-etapa
+Content-Type: application/json
+
+### ====================================
+### 14. OBTER MTMs DE UM COE
+### ====================================
+
+GET https://localhost:7000/api/coe/00000000-0000-0000-0000-000000000001/mtms
+Accept: application/json
+
+### ====================================
+### 15. OBTER POSIÇÕES DE CLIENTES
+### ====================================
+
+GET https://localhost:7000/api/coe/00000000-0000-0000-0000-000000000001/posicoes
+Accept: application/json
+

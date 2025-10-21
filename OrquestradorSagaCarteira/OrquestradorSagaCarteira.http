@@ -1,0 +1,6 @@
+@OrquestradorSagaCarteira_HostAddress = http://localhost:5141
+
+GET {{OrquestradorSagaCarteira_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
