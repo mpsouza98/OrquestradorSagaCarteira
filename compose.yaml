@@ -1,0 +1,7 @@
+﻿services:
+  orquestradorsagacarteira:
+    image: orquestradorsagacarteira
+    build:
+      context: .
+      dockerfile: OrquestradorSagaCarteira/Dockerfile
+
