@@ -3,7 +3,6 @@ using OrquestradorSagaCarteira.Dominio.Entidades;
 using OrquestradorSagaCarteira.Dominio.Enums;
 using OrquestradorSagaCarteira.Dominio.Interfaces;
 using OrquestradorSagaCarteira.Infraestrutura.Persistencia;
-using System.Text.Json;
 using OrquestradorSagaCarteira.Aplicacao.Acoes;
 
 namespace OrquestradorSagaCarteira.Aplicacao.Servicos;
