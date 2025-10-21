@@ -1,6 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using OrquestradorSagaCarteira.Dominio.Entidades;
-using OrquestradorSagaCarteira.Dominio.Enums;
 
 namespace OrquestradorSagaCarteira.Infraestrutura.Persistencia;
 
@@ -93,11 +92,12 @@ public class CarteiraDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.CoeId).HasColumnName("coe_id");
-            entity.Property(e => e.CodigoAtivo).HasColumnName("codigo_ativo");
+            entity.Property(e => e.TickerAtivo).HasColumnName("ticker_ativo");
             entity.Property(e => e.TipoAtivo).HasColumnName("tipo_ativo");
             entity.Property(e => e.PercentualParticipacao).HasColumnName("percentual_participacao").HasPrecision(5, 2);
             entity.Property(e => e.Quantidade).HasColumnName("quantidade").HasPrecision(18, 4);
             entity.Property(e => e.PrecoInicial).HasColumnName("preco_inicial").HasPrecision(18, 4);
+            entity.Property(e => e.CotacaoInicial).HasColumnName("cotacao_inicial").HasPrecision(18, 4);
             entity.Property(e => e.DataCriacao).HasColumnName("data_criacao");
             
             entity.HasOne(e => e.Coe)
@@ -112,7 +112,9 @@ public class CarteiraDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.CoeId).HasColumnName("coe_id");
+            entity.Property(e => e.TickerAtivo).HasColumnName("ticker_ativo");
             entity.Property(e => e.TipoBarreira).HasColumnName("tipo_barreira").HasConversion<string>();
+            entity.Property(e => e.Condicao).HasColumnName("condicao");
             entity.Property(e => e.NivelBarreira).HasColumnName("nivel_barreira").HasPrecision(18, 4);
             entity.Property(e => e.DataObservacao).HasColumnName("data_observacao");
             entity.Property(e => e.Atingida).HasColumnName("atingida");
@@ -132,14 +134,11 @@ public class CarteiraDbContext : DbContext
             entity.ToTable("cotacao");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CodigoAtivo).HasColumnName("codigo_ativo");
-            entity.Property(e => e.TipoAtivo).HasColumnName("tipo_ativo");
-            entity.Property(e => e.DataReferencia).HasColumnName("data_referencia");
-            entity.Property(e => e.PrecoAbertura).HasColumnName("preco_abertura").HasPrecision(18, 4);
+            entity.Property(e => e.CodigoCotacao).HasColumnName("codigo_cotacao");
+            entity.Property(e => e.TickerAtivo).HasColumnName("ticker_ativo");
+            entity.Property(e => e.Fonte).HasColumnName("fonte");
+            entity.Property(e => e.Data).HasColumnName("data");
             entity.Property(e => e.PrecoFechamento).HasColumnName("preco_fechamento").HasPrecision(18, 4);
-            entity.Property(e => e.PrecoMaximo).HasColumnName("preco_maximo").HasPrecision(18, 4);
-            entity.Property(e => e.PrecoMinimo).HasColumnName("preco_minimo").HasPrecision(18, 4);
-            entity.Property(e => e.Volume).HasColumnName("volume").HasPrecision(18, 2);
             entity.Property(e => e.DataCriacao).HasColumnName("data_criacao");
         });
 
@@ -149,17 +148,12 @@ public class CarteiraDbContext : DbContext
             entity.ToTable("mtm");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CoeId).HasColumnName("coe_id");
+            entity.Property(e => e.CodigoOperacao).HasColumnName("codigo_operacao");
+            entity.Property(e => e.ValorMtm).HasColumnName("valor_mtm").HasPrecision(18, 2);
+            entity.Property(e => e.ValorAccrual).HasColumnName("valor_accrual").HasPrecision(18, 2);
+            entity.Property(e => e.SequencialPerna).HasColumnName("sequencial_perna");
             entity.Property(e => e.DataReferencia).HasColumnName("data_referencia");
-            entity.Property(e => e.ValorRendaFixa).HasColumnName("valor_renda_fixa").HasPrecision(18, 2);
-            entity.Property(e => e.ValorRendaVariavel).HasColumnName("valor_renda_variavel").HasPrecision(18, 2);
-            entity.Property(e => e.ValorTotal).HasColumnName("valor_total").HasPrecision(18, 2);
-            entity.Property(e => e.PercentualRentabilidade).HasColumnName("percentual_rentabilidade").HasPrecision(10, 4);
             entity.Property(e => e.DataCriacao).HasColumnName("data_criacao");
-            
-            entity.HasOne(e => e.Coe)
-                .WithMany(c => c.Mtms)
-                .HasForeignKey(e => e.CoeId);
         });
 
         // Configuração PosicaoCliente
@@ -292,4 +286,3 @@ public class CarteiraDbContext : DbContext
         });
     }
 }
-

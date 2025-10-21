@@ -23,15 +23,10 @@ public class AcaoAtualizarPosicaoCliente : IAcaoSaga
         {
             var dados = JsonSerializer.Deserialize<DadosPosicao>(etapa.DadosEntrada ?? "{}");
             
-            var mtm = await _context.Mtms
-                .Where(m => m.CoeId == dados!.CoeId && m.DataReferencia == dados.DataReferencia)
-                .FirstOrDefaultAsync();
-
-            if (mtm == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "MTM não encontrado" };
-
+            // MTM agora é pré-calculado na base, não precisa mais consultar por CoeId
+            // Esta ação agora apenas atualiza as posições com base nos dados fornecidos
             var posicoes = await _context.PosicoesCliente
-                .Where(p => p.CoeId == dados.CoeId && p.Ativo)
+                .Where(p => p.CoeId == dados!.CoeId && p.Ativo)
                 .ToListAsync();
 
             var posicoesAtualizadas = new List<Guid>();
@@ -39,7 +34,8 @@ public class AcaoAtualizarPosicaoCliente : IAcaoSaga
             foreach (var posicao in posicoes)
             {
                 var valorAnterior = posicao.ValorAtual;
-                posicao.ValorAtual = (posicao.Quantidade / 1000) * mtm.ValorTotal; // Simplificado
+                // Atualizar com base no valor fornecido nos dados
+                posicao.ValorAtual = dados.ValorMtm;
                 posicao.DataAtualizacao = DateTime.UtcNow;
                 
                 posicoesAtualizadas.Add(posicao.Id);
@@ -56,7 +52,7 @@ public class AcaoAtualizarPosicaoCliente : IAcaoSaga
                 DadosSaida = JsonSerializer.Serialize(new 
                 { 
                     PosicoesAtualizadas = posicoesAtualizadas,
-                    ValorMtm = mtm.ValorTotal
+                    ValorMtm = dados.ValorMtm
                 })
             };
         }
@@ -71,30 +67,22 @@ public class AcaoAtualizarPosicaoCliente : IAcaoSaga
     {
         try
         {
-            // Buscar MTM anterior para reverter valores
             var dados = JsonSerializer.Deserialize<DadosPosicao>(etapa.DadosEntrada ?? "{}");
-            
-            var mtmAnterior = await _context.Mtms
-                .Where(m => m.CoeId == dados!.CoeId && m.DataReferencia < dados.DataReferencia)
-                .OrderByDescending(m => m.DataReferencia)
-                .FirstOrDefaultAsync();
 
             var posicoes = await _context.PosicoesCliente
-                .Where(p => p.CoeId == dados.CoeId && p.Ativo)
+                .Where(p => p.CoeId == dados!.CoeId && p.Ativo)
                 .ToListAsync();
 
             foreach (var posicao in posicoes)
             {
-                if (mtmAnterior != null)
-                {
-                    posicao.ValorAtual = (posicao.Quantidade / 1000) * mtmAnterior.ValorTotal;
-                }
+                // Reverter para valor investido original
+                posicao.ValorAtual = posicao.ValorInvestido;
                 posicao.DataAtualizacao = DateTime.UtcNow;
             }
 
             await _context.SaveChangesAsync();
             
-            _logger.LogInformation("Posições revertidas para MTM anterior");
+            _logger.LogInformation("Posições revertidas para valor investido");
 
             return new ResultadoCompensacao { Sucesso = true };
         }
@@ -109,6 +97,6 @@ public class AcaoAtualizarPosicaoCliente : IAcaoSaga
     {
         public Guid CoeId { get; set; }
         public DateTime DataReferencia { get; set; }
+        public decimal ValorMtm { get; set; }
     }
 }
-

@@ -300,3 +300,14 @@ Conforme solicitado, todos os conceitos do padrão Saga estão em português:
 - `Observador` (não "Observer")
 - `PublicadorEventos` (não "Event Publisher")
 
+
+Faça as seguintes mudanças:
+
+- Remova toda implementação de calculo de MTM, pois ele ja estara disponivel na base mysql. Reestruture o mtm para os seguintes campos: codigo_operacao (inteiro); valor_mtm (decimal); valor_accrual (decimal); sequencial_perna (boolean)
+- Restruture o consumo de cotações, removendo toda implementação e seguindo a mesma estrategia do mtm, com os registros pre inseridos na base dada a estrutura da tabela: codigo_cotacao; ticker_ativo; fonte; data
+
+Reestruture o GUIA_USO e as devidas orquestrações na base para validar a seguinte saga:
+
+- Observação das cotações diarias no cesto de ativos vinculadas ao COE, sendo ela: META, Snowflak, OPen ai, Microsoft.
+- Observer para cada cotação, onde o observer é cadastrado por barreira e condição (UP ou DOWN). Comanda a mudança de estado para barreira atingida
+- Observer para autocall. Observa as barreiras atingidas, mapeia e agrega 1:N para os COEs em caso de worst-off ou best off para cesta. Para exemplo, use o caso de worst-off onde a META é o ativo de menor taxa de variação, com cotacao_dia > cotacao_inicial. No caso do worst-off, todos os ativos atingem barreira. Em caso de autocall, comandar a liquidação da operação para data agendada previamente estabelecida na estrutura

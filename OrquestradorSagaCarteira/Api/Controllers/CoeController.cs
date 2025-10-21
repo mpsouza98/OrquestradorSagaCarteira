@@ -50,13 +50,13 @@ public class CoeController : ControllerBase
     }
 
     /// <summary>
-    /// Obtém MTMs de um COE
+    /// Obtém MTMs de um COE (agora pré-calculados na base)
     /// </summary>
     [HttpGet("{id}/mtms")]
-    public async Task<IActionResult> ObterMtms(Guid id)
+    public async Task<IActionResult> ObterMtms(int codigoOperacao)
     {
         var mtms = await _context.Mtms
-            .Where(m => m.CoeId == id)
+            .Where(m => m.CodigoOperacao == codigoOperacao)
             .OrderByDescending(m => m.DataReferencia)
             .Take(30)
             .ToListAsync();
@@ -90,4 +90,3 @@ public class CoeController : ControllerBase
         return Ok(barreiras);
     }
 }
-

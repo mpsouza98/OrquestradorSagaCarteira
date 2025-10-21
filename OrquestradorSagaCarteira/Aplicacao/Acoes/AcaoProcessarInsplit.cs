@@ -28,7 +28,7 @@ public class AcaoProcessarInsplit : IAcaoSaga
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "Evento não encontrado" };
 
             var ativos = await _context.AtivosCoe
-                .Where(a => a.CodigoAtivo == evento.CodigoAtivo)
+                .Where(a => a.TickerAtivo == evento.CodigoAtivo)
                 .ToListAsync();
 
             var ajustesRealizados = new List<AjusteAtivo>();
@@ -126,4 +126,3 @@ public class AcaoProcessarInsplit : IAcaoSaga
         public decimal PrecoAnterior { get; set; }
     }
 }
-

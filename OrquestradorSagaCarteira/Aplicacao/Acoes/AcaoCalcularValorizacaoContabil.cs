@@ -23,28 +23,24 @@ public class AcaoCalcularValorizacaoContabil : IAcaoSaga
         {
             var dados = JsonSerializer.Deserialize<DadosValorizacao>(etapa.DadosEntrada ?? "{}");
             
-            var mtm = await _context.Mtms
-                .Where(m => m.CoeId == dados!.CoeId && m.DataReferencia == dados.DataReferencia)
-                .FirstOrDefaultAsync();
-
-            if (mtm == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "MTM não encontrado" };
-
-            var coe = await _context.Coes.FindAsync(dados.CoeId);
+            // MTM agora é pré-calculado e não vinculado ao COE
+            // Esta ação foi simplificada para não depender do MTM
+            var coe = await _context.Coes.FindAsync(dados!.CoeId);
             if (coe == null)
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "COE não encontrado" };
 
+            // Valorização contábil agora usa dados fornecidos
             var valorizacao = new ValorizacaoContabil
             {
                 Id = Guid.NewGuid(),
                 CoeId = dados.CoeId,
                 DataReferencia = dados.DataReferencia,
                 ValorContabil = coe.ValorNominal,
-                ValorMercado = mtm.ValorTotal,
-                Diferenca = mtm.ValorTotal - coe.ValorNominal,
-                AjusteContabil = mtm.ValorTotal - coe.ValorNominal,
-                ContaDebito = mtm.ValorTotal > coe.ValorNominal ? "1.1.05.001" : "3.3.01.001",
-                ContaCredito = mtm.ValorTotal > coe.ValorNominal ? "3.3.01.001" : "1.1.05.001",
+                ValorMercado = dados.ValorMercado,
+                Diferenca = dados.ValorMercado - coe.ValorNominal,
+                AjusteContabil = dados.ValorMercado - coe.ValorNominal,
+                ContaDebito = dados.ValorMercado > coe.ValorNominal ? "1.1.05.001" : "3.3.01.001",
+                ContaCredito = dados.ValorMercado > coe.ValorNominal ? "3.3.01.001" : "1.1.05.001",
                 DataCriacao = DateTime.UtcNow
             };
 
@@ -99,6 +95,6 @@ public class AcaoCalcularValorizacaoContabil : IAcaoSaga
     {
         public Guid CoeId { get; set; }
         public DateTime DataReferencia { get; set; }
+        public decimal ValorMercado { get; set; }
     }
 }
-

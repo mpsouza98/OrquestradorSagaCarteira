@@ -61,22 +61,25 @@ CREATE TABLE IF NOT EXISTS coe (
 CREATE TABLE IF NOT EXISTS ativo_coe (
     id CHAR(36) PRIMARY KEY,
     coe_id CHAR(36) NOT NULL,
-    codigo_ativo VARCHAR(50) NOT NULL,
+    ticker_ativo VARCHAR(50) NOT NULL,
     tipo_ativo VARCHAR(50) NOT NULL,
     percentual_participacao DECIMAL(5, 2) NOT NULL,
     quantidade DECIMAL(18, 4),
     preco_inicial DECIMAL(18, 4),
+    cotacao_inicial DECIMAL(18, 4) NOT NULL,
     data_criacao DATETIME NOT NULL,
     FOREIGN KEY (coe_id) REFERENCES coe(id) ON DELETE CASCADE,
     INDEX idx_coe_id (coe_id),
-    INDEX idx_codigo_ativo (codigo_ativo)
+    INDEX idx_ticker_ativo (ticker_ativo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Tabela de Barreiras
 CREATE TABLE IF NOT EXISTS barreira (
     id CHAR(36) PRIMARY KEY,
     coe_id CHAR(36) NOT NULL,
-    tipo_barreira VARCHAR(50) NOT NULL, -- AUTOCALL, BEST_OF, WORST_OF
+    ticker_ativo VARCHAR(50) NULL,
+    tipo_barreira VARCHAR(50) NOT NULL,
+    condicao VARCHAR(10) NOT NULL, -- UP ou DOWN
     nivel_barreira DECIMAL(18, 4) NOT NULL,
     data_observacao DATE NOT NULL,
     atingida BOOLEAN DEFAULT FALSE,
@@ -86,41 +89,36 @@ CREATE TABLE IF NOT EXISTS barreira (
     data_criacao DATETIME NOT NULL,
     FOREIGN KEY (coe_id) REFERENCES coe(id) ON DELETE CASCADE,
     INDEX idx_coe_id (coe_id),
+    INDEX idx_ticker_ativo (ticker_ativo),
     INDEX idx_tipo_barreira (tipo_barreira),
     INDEX idx_atingida (atingida),
     INDEX idx_data_observacao (data_observacao)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabela de Cotações
+-- Tabela de Cotações (simplificada - pré-inserida)
 CREATE TABLE IF NOT EXISTS cotacao (
     id CHAR(36) PRIMARY KEY,
-    codigo_ativo VARCHAR(50) NOT NULL,
-    tipo_ativo VARCHAR(50) NOT NULL,
-    data_referencia DATE NOT NULL,
-    preco_abertura DECIMAL(18, 4),
-    preco_fechamento DECIMAL(18, 4),
-    preco_maximo DECIMAL(18, 4),
-    preco_minimo DECIMAL(18, 4),
-    volume DECIMAL(18, 2),
+    codigo_cotacao INT NOT NULL AUTO_INCREMENT UNIQUE,
+    ticker_ativo VARCHAR(50) NOT NULL,
+    fonte VARCHAR(50) NOT NULL,
+    data DATE NOT NULL,
+    preco_fechamento DECIMAL(18, 4) NOT NULL,
     data_criacao DATETIME NOT NULL,
-    UNIQUE KEY uk_cotacao (codigo_ativo, data_referencia),
-    INDEX idx_codigo_ativo (codigo_ativo),
-    INDEX idx_data_referencia (data_referencia)
+    UNIQUE KEY uk_cotacao (ticker_ativo, data, fonte),
+    INDEX idx_ticker_ativo (ticker_ativo),
+    INDEX idx_data (data)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabela de MTM (Mark-to-Market)
+-- Tabela de MTM (simplificada - pré-calculado)
 CREATE TABLE IF NOT EXISTS mtm (
     id CHAR(36) PRIMARY KEY,
-    coe_id CHAR(36) NOT NULL,
+    codigo_operacao INT NOT NULL,
+    valor_mtm DECIMAL(18, 2) NOT NULL,
+    valor_accrual DECIMAL(18, 2) NOT NULL,
+    sequencial_perna INT NOT NULL,
     data_referencia DATE NOT NULL,
-    valor_renda_fixa DECIMAL(18, 2),
-    valor_renda_variavel DECIMAL(18, 2),
-    valor_total DECIMAL(18, 2) NOT NULL,
-    percentual_rentabilidade DECIMAL(10, 4),
     data_criacao DATETIME NOT NULL,
-    FOREIGN KEY (coe_id) REFERENCES coe(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_mtm (coe_id, data_referencia),
-    INDEX idx_coe_id (coe_id),
+    INDEX idx_codigo_operacao (codigo_operacao),
     INDEX idx_data_referencia (data_referencia)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -163,7 +161,7 @@ CREATE TABLE IF NOT EXISTS valorizacao_contabil (
 CREATE TABLE IF NOT EXISTS evento_corporativo (
     id CHAR(36) PRIMARY KEY,
     codigo_ativo VARCHAR(50) NOT NULL,
-    tipo_evento VARCHAR(50) NOT NULL, -- SPLIT, INPLIT, CREDITO, DIVIDENDO
+    tipo_evento VARCHAR(50) NOT NULL,
     data_evento DATE NOT NULL,
     data_com DATE,
     fator_ajuste DECIMAL(18, 8),
@@ -182,7 +180,7 @@ CREATE TABLE IF NOT EXISTS liquidacao (
     id CHAR(36) PRIMARY KEY,
     coe_id CHAR(36) NOT NULL,
     barreira_id CHAR(36),
-    tipo_liquidacao VARCHAR(50) NOT NULL, -- AUTOCALL, VENCIMENTO, ANTECIPADO
+    tipo_liquidacao VARCHAR(50) NOT NULL,
     data_liquidacao DATE NOT NULL,
     valor_liquidacao DECIMAL(18, 2) NOT NULL,
     percentual_retorno DECIMAL(10, 4),
@@ -212,7 +210,7 @@ CREATE TABLE IF NOT EXISTS historico_compensacao (
     INDEX idx_estado_compensacao (estado_compensacao)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabela de Eventos do Sistema (Observer Pattern)
+-- Tabela de Eventos do Sistema
 CREATE TABLE IF NOT EXISTS evento_sistema (
     id CHAR(36) PRIMARY KEY,
     tipo_evento VARCHAR(100) NOT NULL,
@@ -238,13 +236,77 @@ CREATE TABLE IF NOT EXISTS inscricao_observador (
     INDEX idx_ativo (ativo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Inserir dados de exemplo
+-- ========================================
+-- DADOS DE EXEMPLO - COE WORST-OFF
+-- ========================================
+
+-- 1. Criar COE com estrutura Worst-Off
+SET @coe_id = UUID();
+
 INSERT INTO coe (id, codigo, descricao, data_emissao, data_vencimento, valor_nominal, 
                  percentual_renda_fixa, percentual_renda_variavel, tipo_estrutura, 
                  ativo, data_criacao, data_atualizacao)
 VALUES 
-    (UUID(), 'COE001', 'COE Ibovespa com Autocall', '2025-01-15', '2026-01-15', 100000.00, 
-     70.00, 30.00, 'AUTOCALL', TRUE, NOW(), NOW()),
-    (UUID(), 'COE002', 'COE Multiativos Best-of', '2025-02-01', '2027-02-01', 250000.00, 
-     60.00, 40.00, 'BEST_OF', TRUE, NOW(), NOW());
+    (@coe_id, 'COE-WORSTOFF-001', 'COE Tech Worst-Off com Autocall', '2025-01-15', '2026-01-15', 1000000.00, 
+     50.00, 50.00, 'WORST_OFF', TRUE, NOW(), NOW());
 
+-- 2. Ativos da cesta (META, SNOW, OpenAI, MSFT)
+INSERT INTO ativo_coe (id, coe_id, ticker_ativo, tipo_ativo, percentual_participacao, 
+                       quantidade, preco_inicial, cotacao_inicial, data_criacao)
+VALUES 
+    (UUID(), @coe_id, 'META', 'ACAO', 25.00, 100, 450.00, 450.00, NOW()),
+    (UUID(), @coe_id, 'SNOW', 'ACAO', 25.00, 150, 200.00, 200.00, NOW()),
+    (UUID(), @coe_id, 'OPENAI', 'ACAO', 25.00, 80, 500.00, 500.00, NOW()),
+    (UUID(), @coe_id, 'MSFT', 'ACAO', 25.00, 120, 380.00, 380.00, NOW());
+
+-- 3. Barreiras individuais por ativo (condição UP - todos devem subir para ativar autocall)
+SET @barreira_meta = UUID();
+SET @barreira_snow = UUID();
+SET @barreira_openai = UUID();
+SET @barreira_msft = UUID();
+SET @data_observacao = '2025-10-21';
+
+INSERT INTO barreira (id, coe_id, ticker_ativo, tipo_barreira, condicao, nivel_barreira, 
+                      data_observacao, atingida, ativa, data_criacao)
+VALUES 
+    (@barreira_meta, @coe_id, 'META', 'Autocall', 'UP', 450.00, @data_observacao, FALSE, TRUE, NOW()),
+    (@barreira_snow, @coe_id, 'SNOW', 'Autocall', 'UP', 200.00, @data_observacao, FALSE, TRUE, NOW()),
+    (@barreira_openai, @coe_id, 'OPENAI', 'Autocall', 'UP', 500.00, @data_observacao, FALSE, TRUE, NOW()),
+    (@barreira_msft, @coe_id, 'MSFT', 'Autocall', 'UP', 380.00, @data_observacao, FALSE, TRUE, NOW());
+
+-- 4. Cotações iniciais (data de emissão)
+INSERT INTO cotacao (id, ticker_ativo, fonte, data, preco_fechamento, data_criacao)
+VALUES 
+    (UUID(), 'META', 'NASDAQ', '2025-01-15', 450.00, NOW()),
+    (UUID(), 'SNOW', 'NYSE', '2025-01-15', 200.00, NOW()),
+    (UUID(), 'OPENAI', 'PRIVATE', '2025-01-15', 500.00, NOW()),
+    (UUID(), 'MSFT', 'NASDAQ', '2025-01-15', 380.00, NOW());
+
+-- 5. Cotações do dia da observação (21/10/2025)
+-- META com menor variação (3.33% - Worst-OFF), mas todos acima da barreira
+INSERT INTO cotacao (id, ticker_ativo, fonte, data, preco_fechamento, data_criacao)
+VALUES 
+    (UUID(), 'META', 'NASDAQ', @data_observacao, 465.00, NOW()),     -- +3.33% (WORST-OFF)
+    (UUID(), 'SNOW', 'NYSE', @data_observacao, 220.00, NOW()),        -- +10.00%
+    (UUID(), 'OPENAI', 'PRIVATE', @data_observacao, 550.00, NOW()),   -- +10.00%
+    (UUID(), 'MSFT', 'NASDAQ', @data_observacao, 418.00, NOW());      -- +10.00%
+
+-- 6. Posições de clientes
+INSERT INTO posicao_cliente (id, coe_id, codigo_cliente, quantidade, valor_investido, 
+                             valor_atual, data_aquisicao, data_atualizacao, ativo)
+VALUES 
+    (UUID(), @coe_id, 'CLI001', 10.0, 100000.00, 100000.00, '2025-01-15', NOW(), TRUE),
+    (UUID(), @coe_id, 'CLI002', 5.0, 50000.00, 50000.00, '2025-01-15', NOW(), TRUE);
+
+-- 7. MTM pré-calculados
+INSERT INTO mtm (id, codigo_operacao, valor_mtm, valor_accrual, sequencial_perna, 
+                 data_referencia, data_criacao)
+VALUES 
+    (UUID(), 1, 500000.00, 2500.00, 1, '2025-01-15', NOW()),
+    (UUID(), 1, 506650.00, 5150.00, 1, @data_observacao, NOW());
+
+-- 8. Inscrever observadores
+INSERT INTO inscricao_observador (id, topico, nome_observador, ativo, data_criacao)
+VALUES 
+    (UUID(), 'topico.cotacoes', 'ObservadorCotacao', TRUE, NOW()),
+    (UUID(), 'topico.barreiras', 'ObservadorBarreira', TRUE, NOW());

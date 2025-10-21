@@ -30,14 +30,9 @@ public class AcaoCalcularValorLiquidacao : IAcaoSaga
             if (liquidacao == null)
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "Liquidação não encontrada" };
 
-            // Buscar último MTM
-            var mtm = await _context.Mtms
-                .Where(m => m.CoeId == liquidacao.CoeId)
-                .OrderByDescending(m => m.DataReferencia)
-                .FirstOrDefaultAsync();
-
-            decimal valorLiquidacao = mtm?.ValorTotal ?? liquidacao.Coe.ValorNominal;
-            decimal percentualRetorno = mtm?.PercentualRentabilidade ?? 0;
+            // MTM agora é pré-calculado, usar valor fornecido nos dados
+            decimal valorLiquidacao = dados.ValorLiquidacao > 0 ? dados.ValorLiquidacao : liquidacao.Coe.ValorNominal;
+            decimal percentualRetorno = ((valorLiquidacao - liquidacao.Coe.ValorNominal) / liquidacao.Coe.ValorNominal) * 100;
 
             liquidacao.ValorLiquidacao = valorLiquidacao;
             liquidacao.PercentualRetorno = percentualRetorno;
@@ -96,6 +91,6 @@ public class AcaoCalcularValorLiquidacao : IAcaoSaga
     private class DadosCalculo
     {
         public Guid LiquidacaoId { get; set; }
+        public decimal ValorLiquidacao { get; set; }
     }
 }
-

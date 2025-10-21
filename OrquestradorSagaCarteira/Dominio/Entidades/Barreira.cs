@@ -6,7 +6,9 @@ public class Barreira
 {
     public Guid Id { get; set; }
     public Guid CoeId { get; set; }
+    public string? TickerAtivo { get; set; } // Ativo específico da barreira (para observação individual)
     public TipoBarreira TipoBarreira { get; set; }
+    public string Condicao { get; set; } = string.Empty; // UP ou DOWN
     public decimal NivelBarreira { get; set; }
     public DateTime DataObservacao { get; set; }
     public bool Atingida { get; set; }
@@ -17,4 +19,3 @@ public class Barreira
     
     public Coe Coe { get; set; } = null!;
 }
-

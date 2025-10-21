@@ -32,18 +32,18 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "Barreira não encontrada" };
 
             // Obter cotações dos ativos na data de observação
-            var codigosAtivos = barreira.Coe.Ativos.Select(a => a.CodigoAtivo).ToList();
+            var tickersAtivos = barreira.Coe.Ativos.Select(a => a.TickerAtivo).ToList();
             var cotacoes = await _context.Cotacoes
-                .Where(c => codigosAtivos.Contains(c.CodigoAtivo) && c.DataReferencia == barreira.DataObservacao)
+                .Where(c => tickersAtivos.Contains(c.TickerAtivo) && c.Data == barreira.DataObservacao)
                 .ToListAsync();
 
             decimal valorCesta = 0;
             foreach (var ativo in barreira.Coe.Ativos)
             {
-                var cotacao = cotacoes.FirstOrDefault(c => c.CodigoAtivo == ativo.CodigoAtivo);
+                var cotacao = cotacoes.FirstOrDefault(c => c.TickerAtivo == ativo.TickerAtivo);
                 if (cotacao != null && ativo.Quantidade.HasValue)
                 {
-                    valorCesta += (cotacao.PrecoFechamento ?? 0) * ativo.Quantidade.Value;
+                    valorCesta += cotacao.PrecoFechamento * ativo.Quantidade.Value;
                 }
             }
 
@@ -91,4 +91,3 @@ public class AcaoVerificarBarreira : IAcaoSaga
         public Guid BarreiraId { get; set; }
     }
 }
-
