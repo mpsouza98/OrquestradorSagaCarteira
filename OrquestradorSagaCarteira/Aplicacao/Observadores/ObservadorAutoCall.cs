@@ -29,17 +29,38 @@ public class ObservadorAutoCall : IObservador
         {
             _logger.LogInformation("ObservadorAutoCall recebeu evento do tópico {Topico}", topico);
 
-            var evento = JsonSerializer.Deserialize<EventoBarreiraAtingida>(dadosEvento);
-            if (evento == null) return;
-
-            _logger.LogInformation(
-                "Iniciando saga para verificação de autocall - OperacaoId: {OperacaoId}",
-                evento.OperacaoId);
+            // Espera payload no formato: { OperacoesIds: [..], TipoEvento: "BarreirasAtingidas", DataEvento: ... }
+            var batch = JsonSerializer.Deserialize<EventoBarreirasAtingidasBatch>(dadosEvento);
+            if (batch == null || batch.OperacoesIds == null || !batch.OperacoesIds.Any())
+            {
+                _logger.LogWarning("Payload inválido ou sem operações para verificar autocall");
+                return;
+            }
 
             using var scope = _scopeFactory.CreateScope();
             var orquestrador = scope.ServiceProvider.GetRequiredService<IOrquestradorSaga>();
+            var barreiraRepository = scope.ServiceProvider.GetRequiredService<IBarreiraRepository>();
 
-            // Criar saga para processar autocall
+            // Carregar barreiras de todas as operações em uma única consulta
+            var barreiras = await barreiraRepository.ObterPorOperacoesAsync(batch.OperacoesIds);
+
+            // Montar DadosContexto compatível: lista de todas barreiras das operações
+            var dadosContexto = JsonSerializer.Serialize(new
+            {
+                Ticker = string.Empty,
+                CotacaoAtual = 0m,
+                DataReferencia = batch.DataEvento,
+                Fonte = "topico.barreira",
+                Barreiras = barreiras.Select(b => new
+                {
+                    BarreiraId = b.Id,
+                    OperacaoId = b.OperacaoId,
+                    NivelBarreira = b.NivelBarreira,
+                    Condicao = b.Condicao
+                }).ToList()
+            });
+
+            // Criar saga para processar autocall em lote: Verificar -> Persistir -> Notificar
             var saga = new Saga
             {
                 Id = Guid.NewGuid(),
@@ -47,62 +68,50 @@ public class ObservadorAutoCall : IObservador
                 EstadoSaga = EstadoSaga.Iniciada,
                 DataCriacao = DateTime.UtcNow,
                 DataAtualizacao = DateTime.UtcNow,
-                DadosContexto = JsonSerializer.Serialize(new { evento.OperacaoId, evento.EventoId })
+                DadosContexto = dadosContexto
             };
 
-            // Etapa 1: Agregar Cesta
-            saga.Etapas.Add(new EtapaSaga
-            {
-                Id = Guid.NewGuid(),
-                SagaId = saga.Id,
-                NomeEtapa = "Agregar Cesta",
-                OrdemExecucao = 1,
-                EstadoEtapa = EstadoEtapa.Pendente,
-                TipoAcao = TipoAcao.AgregarCesta,
-                DadosEntrada = JsonSerializer.Serialize(new
-                {
-                    OperacaoId = evento.OperacaoId,
-                    DataReferencia = evento.DataEvento
-                })
-            });
-
-            // Etapa 2: Verificar AutoCall
+            // Etapa 1: Verificar AutoCall (lê do contexto)
             saga.Etapas.Add(new EtapaSaga
             {
                 Id = Guid.NewGuid(),
                 SagaId = saga.Id,
                 NomeEtapa = "Verificar AutoCall",
-                OrdemExecucao = 2,
+                OrdemExecucao = 1,
                 EstadoEtapa = EstadoEtapa.Pendente,
                 TipoAcao = TipoAcao.VerificarAutoCall,
-                DadosEntrada = "{}" // Será preenchido com dados da etapa anterior
+                DadosEntrada = "{}"
             });
 
-            // Etapa 3: Persistir AutoCall
+            // Etapa 2: Persistir AutoCall (lote)
             saga.Etapas.Add(new EtapaSaga
             {
                 Id = Guid.NewGuid(),
                 SagaId = saga.Id,
                 NomeEtapa = "Persistir AutoCall",
-                OrdemExecucao = 3,
+                OrdemExecucao = 2,
                 EstadoEtapa = EstadoEtapa.Pendente,
                 TipoAcao = TipoAcao.PersistirAutoCall,
-                DadosEntrada = "{}" // Será preenchido com dados da etapa anterior
+                DadosEntrada = "{}"
             });
 
-            // Etapa 4: Notificar AutoCall
+            // Etapa 3: Notificar AutoCall (lote)
             saga.Etapas.Add(new EtapaSaga
             {
                 Id = Guid.NewGuid(),
                 SagaId = saga.Id,
                 NomeEtapa = "Notificar AutoCall",
-                OrdemExecucao = 4,
+                OrdemExecucao = 3,
                 EstadoEtapa = EstadoEtapa.Pendente,
                 TipoAcao = TipoAcao.NotificarAutoCall,
-                DadosEntrada = "{}" // Será preenchido com dados da etapa anterior
+                DadosEntrada = "{}"
             });
 
             await orquestrador.IniciarSagaAsync(saga);
+
+            _logger.LogInformation(
+                "🚀 Saga {SagaId} iniciada para verificação de autocall em {Qtd} operações",
+                saga.Id, batch.OperacoesIds.Count);
         }
         catch (Exception ex)
         {
@@ -111,10 +120,9 @@ public class ObservadorAutoCall : IObservador
     }
 }
 
-public class EventoBarreiraAtingida
+public class EventoBarreirasAtingidasBatch
 {
-    public Guid EventoId { get; set; }
-    public Guid OperacaoId { get; set; }
+    public List<Guid> OperacoesIds { get; set; } = new();
     public string TipoEvento { get; set; } = string.Empty;
     public DateTime DataEvento { get; set; }
 }

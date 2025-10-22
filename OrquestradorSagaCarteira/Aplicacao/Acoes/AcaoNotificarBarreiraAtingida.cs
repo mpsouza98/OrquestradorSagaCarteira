@@ -31,31 +31,31 @@ public class AcaoNotificarBarreiraAtingida : IAcaoSaga
                 return new ResultadoAcao { Sucesso = true };
             }
 
-            _logger.LogInformation("📢 Notificando {Qtd} barreiras atingidas em lote", dados.Eventos.Count);
+            // Construir mensagem com lista de OperacoesIds (distintas)
+            var operacoesIds = dados.Eventos
+                .Select(e => e.OperacaoId)
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
 
-            var notificacoesEnviadas = 0;
-
-            foreach (var evento in dados.Eventos)
+            if (!operacoesIds.Any())
             {
-                var mensagem = JsonSerializer.Serialize(new
-                {
-                    EventoId = evento.EventoId,
-                    BarreiraId = evento.BarreiraId,
-                    OperacaoId = evento.OperacaoId,
-                    Ticker = evento.Ticker,
-                    TipoEvento = "BarreiraAtingida",
-                    DataEvento = DateTime.UtcNow
-                });
-
-                await _publicador.PublicarAsync("topico.barreira", mensagem);
-                notificacoesEnviadas++;
-
-                _logger.LogInformation(
-                    "✉️ Barreira notificada - EventoId: {EventoId}, OperacaoId: {OperacaoId}, Ticker: {Ticker}",
-                    evento.EventoId, evento.OperacaoId, evento.Ticker);
+                _logger.LogInformation("ℹ️ Nenhuma operação válida encontrada para notificação de autocall");
+                return new ResultadoAcao { Sucesso = true };
             }
 
-            _logger.LogInformation("✔️ Notificação em lote concluída - {Qtd} eventos publicados", notificacoesEnviadas);
+            var mensagem = JsonSerializer.Serialize(new
+            {
+                OperacoesIds = operacoesIds,
+                TipoEvento = "BarreirasAtingidas",
+                DataEvento = DateTime.UtcNow
+            });
+
+            await _publicador.PublicarAsync("topico.barreira", mensagem);
+
+            _logger.LogInformation(
+                "📢 Notificação enviada - {Qtd} operações publicadas no tópico 'topico.barreira'",
+                operacoesIds.Count);
 
             return new ResultadoAcao { Sucesso = true };
         }
@@ -81,7 +81,6 @@ public class DadosNotificarBarreira
 public class EventoNotificacao
 {
     public Guid EventoId { get; set; }
-    public Guid BarreiraId { get; set; }
     public Guid OperacaoId { get; set; }
     public string Ticker { get; set; } = string.Empty;
 }

@@ -48,11 +48,11 @@ public class BarreiraRepository : IBarreiraRepository
         if (ids.Length == 0) return new List<BarreiraOperacao>();
 
         using var connection = _connectionFactory.CreateConnection();
-        // Postgres: usar ANY(@OperacaoIds) com array de uuid
+        // Usar IN @OperacaoIds para Dapper expandir a lista corretamente (compatível com MySQL)
         var sql = $@"
             SELECT {CamposSelecionados}
             FROM barreira_operacao
-            WHERE operacao_id = ANY(@OperacaoIds)
+            WHERE operacao_id IN @OperacaoIds
             ORDER BY operacao_id, data_observacao";
 
         var barreiras = await connection.QueryAsync<BarreiraOperacao>(sql, new { OperacaoIds = ids });
