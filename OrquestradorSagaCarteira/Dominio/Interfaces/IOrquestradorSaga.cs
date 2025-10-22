@@ -13,14 +13,14 @@ public interface IOrquestradorSaga
     Task<Saga> IniciarSagaAsync(Saga saga);
     
     /// <summary>
-    /// Executa a próxima etapa da saga
+    /// Executa a próxima etapa da saga (recebe a saga diretamente para evitar consultas ao banco)
     /// </summary>
-    Task ExecutarProximaEtapaAsync(Guid sagaId);
+    Task ExecutarProximaEtapaAsync(Saga saga);
     
     /// <summary>
-    /// Compensa as etapas executadas em caso de falha
+    /// Compensa as etapas executadas em caso de falha (recebe a saga diretamente para evitar consultas ao banco)
     /// </summary>
-    Task CompensarSagaAsync(Guid sagaId);
+    Task CompensarSagaAsync(Saga saga);
     
     /// <summary>
     /// Obtém o estado atual da saga
@@ -32,4 +32,3 @@ public interface IOrquestradorSaga
     /// </summary>
     Task<List<Saga>> ListarSagasAsync(int pagina = 1, int tamanhoPagina = 50);
 }
-

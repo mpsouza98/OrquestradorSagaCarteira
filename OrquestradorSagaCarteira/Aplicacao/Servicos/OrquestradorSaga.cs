@@ -41,24 +41,19 @@ public class OrquestradorSaga : IOrquestradorSaga
         _logger.LogInformation("📋 Saga {SagaId} iniciada - Tipo: {TipoSaga}, Etapas: {NumEtapas}",
             saga.Id, saga.TipoSaga, saga.Etapas.Count);
 
-        // Iniciar execução
-        await ExecutarProximaEtapaAsync(saga.Id);
+        // Iniciar execução passando a saga diretamente
+        await ExecutarProximaEtapaAsync(saga);
 
         return saga;
     }
 
-    public async Task ExecutarProximaEtapaAsync(Guid sagaId)
+    public async Task ExecutarProximaEtapaAsync(Saga saga)
     {
-        var saga = await _sagaRepository.ObterPorIdAsync(sagaId);
-
-        if (saga == null)
-        {
-            _logger.LogError("❌ Saga {SagaId} não encontrada", sagaId);
-            return;
-        }
+        _logger.LogDebug("🔍 Executando saga {SagaId} - Estado: {Estado}, Etapas: {QtdEtapas}", 
+            saga.Id, saga.EstadoSaga, saga.Etapas?.Count ?? 0);
         
         // Buscar próxima etapa pendente
-        var proximaEtapa = saga.Etapas
+        var proximaEtapa = (saga.Etapas ?? throw new InvalidOperationException())
             .Where(e => e.EstadoEtapa == EstadoEtapa.Pendente)
             .OrderBy(e => e.OrdemExecucao)
             .FirstOrDefault();
@@ -71,9 +66,13 @@ public class OrquestradorSaga : IOrquestradorSaga
             saga.DataAtualizacao = DateTime.UtcNow;
             await _sagaRepository.AtualizarAsync(saga);
 
-            _logger.LogInformation("✅ Saga {SagaId} concluída com sucesso", sagaId);
+            _logger.LogInformation("✅ Saga {SagaId} concluída com sucesso", saga.Id);
             return;
         }
+
+        // Garantir que a navegação Saga está preenchida na etapa
+        proximaEtapa.Saga = saga;
+        proximaEtapa.SagaId = saga.Id;
 
         // Executar etapa
         proximaEtapa.EstadoEtapa = EstadoEtapa.EmExecucao;
@@ -115,8 +114,8 @@ public class OrquestradorSaga : IOrquestradorSaga
 
                 _logger.LogInformation("✔️ Etapa {NomeEtapa} concluída", proximaEtapa.NomeEtapa);
 
-                // Executar próxima etapa
-                await ExecutarProximaEtapaAsync(sagaId);
+                // Executar próxima etapa passando a saga atualizada diretamente
+                await ExecutarProximaEtapaAsync(saga);
             }
             else
             {
@@ -130,7 +129,7 @@ public class OrquestradorSaga : IOrquestradorSaga
                 _logger.LogError("❌ Etapa {NomeEtapa} falhou: {Erro}",
                     proximaEtapa.NomeEtapa, resultado.MensagemErro);
 
-                await CompensarSagaAsync(sagaId);
+                await CompensarSagaAsync(saga);
             }
         }
         catch (Exception ex)
@@ -143,17 +142,15 @@ public class OrquestradorSaga : IOrquestradorSaga
 
             _logger.LogError(ex, "❌ Erro ao executar etapa {NomeEtapa}", proximaEtapa.NomeEtapa);
 
-            await CompensarSagaAsync(sagaId);
+            await CompensarSagaAsync(saga);
         }
     }
 
-    public async Task CompensarSagaAsync(Guid sagaId)
+    public async Task CompensarSagaAsync(Saga saga)
     {
-        var saga = await _sagaRepository.ObterPorIdAsync(sagaId);
-
         if (saga == null)
         {
-            _logger.LogError("❌ Saga {SagaId} não encontrada para compensação", sagaId);
+            _logger.LogError("❌ Saga não pode ser nula para compensação");
             return;
         }
 
@@ -161,7 +158,7 @@ public class OrquestradorSaga : IOrquestradorSaga
         saga.DataAtualizacao = DateTime.UtcNow;
         await _sagaRepository.AtualizarAsync(saga);
 
-        _logger.LogWarning("⚠️ Iniciando compensação da Saga {SagaId}", sagaId);
+        _logger.LogWarning("⚠️ Iniciando compensação da Saga {SagaId}", saga.Id);
 
         // Compensar etapas na ordem inversa
         var etapasParaCompensar = saga.Etapas
@@ -207,7 +204,7 @@ public class OrquestradorSaga : IOrquestradorSaga
         saga.DataAtualizacao = DateTime.UtcNow;
         await _sagaRepository.AtualizarAsync(saga);
 
-        _logger.LogWarning("⚠️ Saga {SagaId} compensada", sagaId);
+        _logger.LogWarning("⚠️ Saga {SagaId} compensada", saga.Id);
     }
 
     public async Task<Saga?> ObterSagaAsync(Guid sagaId)
