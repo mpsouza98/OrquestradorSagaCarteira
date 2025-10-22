@@ -41,6 +41,19 @@ public class BarreiraRepository : IBarreiraRepository
         return barreiras.ToList();
     }
 
+    public async Task<List<BarreiraOperacao>> ObterBarreirasAtivasPorTickerAsync(string ticker)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            SELECT * FROM barreira_operacao 
+            WHERE ativa = TRUE 
+              AND atingida = FALSE 
+              AND ticker = @Ticker
+            ORDER BY data_observacao";
+        var barreiras = await connection.QueryAsync<BarreiraOperacao>(sql, new { Ticker = ticker });
+        return barreiras.ToList();
+    }
+
     public async Task<Guid> InserirAsync(BarreiraOperacao barreira)
     {
         using var connection = _connectionFactory.CreateConnection();
@@ -64,5 +77,23 @@ public class BarreiraRepository : IBarreiraRepository
                 ativa = @Ativa
             WHERE id = @Id";
         await connection.ExecuteAsync(sql, barreira);
+    }
+
+    public async Task<BarreiraOperacao?> ObterPorTickerENivelAsync(string ticker, decimal nivelBarreira, DateTime dataReferencia)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            SELECT * FROM barreira_operacao 
+            WHERE ticker = @Ticker 
+              AND nivel_barreira = @NivelBarreira 
+              AND ativa = TRUE 
+              AND atingida = FALSE
+              AND data_observacao <= @DataReferencia
+            ORDER BY data_observacao DESC
+            LIMIT 1";
+        
+        return await connection.QuerySingleOrDefaultAsync<BarreiraOperacao>(
+            sql, 
+            new { Ticker = ticker, NivelBarreira = nivelBarreira, DataReferencia = dataReferencia.Date });
     }
 }

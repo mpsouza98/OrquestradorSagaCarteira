@@ -57,6 +57,12 @@ public class OrquestradorSaga : IOrquestradorSaga
             return;
         }
 
+        // Garante a associação da Saga em todas as etapas carregadas
+        foreach (var etapa in saga.Etapas)
+        {
+            etapa.Saga = saga;
+        }
+
         // Buscar próxima etapa pendente
         var proximaEtapa = saga.Etapas
             .Where(e => e.EstadoEtapa == EstadoEtapa.Pendente)
@@ -74,6 +80,10 @@ public class OrquestradorSaga : IOrquestradorSaga
             _logger.LogInformation("✅ Saga {SagaId} concluída com sucesso", sagaId);
             return;
         }
+
+        // Garante que a próxima etapa também está com a navegação preenchida
+        proximaEtapa.Saga = saga;
+        proximaEtapa.SagaId = sagaId;
 
         // Executar etapa
         proximaEtapa.EstadoEtapa = EstadoEtapa.EmExecucao;

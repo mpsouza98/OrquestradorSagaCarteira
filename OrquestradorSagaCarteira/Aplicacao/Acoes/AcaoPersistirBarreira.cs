@@ -5,21 +5,18 @@ using OrquestradorSagaCarteira.Dominio.Interfaces;
 namespace OrquestradorSagaCarteira.Aplicacao.Acoes;
 
 /// <summary>
-/// Ação para persistir evento de barreira atingida
+/// Ação para validar persistência de barreira (já persistida pelo Observer)
 /// </summary>
 public class AcaoPersistirBarreira : IAcaoSaga
 {
     private readonly IBarreiraRepository _barreiraRepository;
-    private readonly IEventoBarreiraRepository _eventoRepository;
     private readonly ILogger<AcaoPersistirBarreira> _logger;
 
     public AcaoPersistirBarreira(
         IBarreiraRepository barreiraRepository,
-        IEventoBarreiraRepository eventoRepository,
         ILogger<AcaoPersistirBarreira> logger)
     {
         _barreiraRepository = barreiraRepository;
-        _eventoRepository = eventoRepository;
         _logger = logger;
     }
 
@@ -31,42 +28,38 @@ public class AcaoPersistirBarreira : IAcaoSaga
             if (dados == null || !dados.BarreiraAtingida)
                 return new ResultadoAcao { Sucesso = true, DadosSaida = "{}" };
 
+            // Validar se a barreira foi persistida corretamente
             var barreira = await _barreiraRepository.ObterPorIdAsync(dados.BarreiraId);
             if (barreira == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Barreira não encontrada" };
+                return new ResultadoAcao { Sucesso = false, MensagemErro = "Barreira não encontrada para validação" };
 
-            // Atualizar barreira
-            barreira.Atingida = true;
-            barreira.DataAtingimento = DateTime.UtcNow;
-            barreira.ValorAtingimento = dados.ValorObservado;
-            await _barreiraRepository.AtualizarAsync(barreira);
-
-            // Criar evento de barreira
-            var evento = new EventoBarreira
+            if (!barreira.Atingida)
             {
-                Id = Guid.NewGuid(),
-                BarreiraId = barreira.Id,
-                OperacaoId = barreira.OperacaoId,
-                Ticker = dados.Ticker,
-                ValorObservado = dados.ValorObservado,
-                NivelBarreira = barreira.NivelBarreira,
-                TipoBarreira = barreira.TipoBarreira,
-                DataEvento = DateTime.UtcNow,
-                DadosEvento = JsonSerializer.Serialize(new { dados.TaxaVariacao, barreira.Condicao })
-            };
+                _logger.LogWarning("⚠️ Barreira {BarreiraId} não estava marcada como atingida, atualizando...", dados.BarreiraId);
 
-            await _eventoRepository.InserirAsync(evento);
+                barreira.Atingida = true;
+                barreira.DataAtingimento = DateTime.UtcNow;
+                barreira.ValorAtingimento = dados.ValorObservado;
+                await _barreiraRepository.AtualizarAsync(barreira);
+            }
 
             _logger.LogInformation(
-                "Barreira persistida - ID: {BarreiraId}, Ticker: {Ticker}, Valor: {Valor}",
-                barreira.Id, dados.Ticker, dados.ValorObservado);
+                "✅ Barreira validada - ID: {BarreiraId}, Ticker: {Ticker}, Atingida: {Atingida}",
+                barreira.Id, dados.Ticker, barreira.Atingida);
 
-            var dadosSaida = JsonSerializer.Serialize(new { EventoId = evento.Id, barreira.OperacaoId });
+            var dadosSaida = JsonSerializer.Serialize(new
+            {
+                BarreiraId = barreira.Id,
+                OperacaoId = barreira.OperacaoId,
+                dados.Ticker,
+                Validada = true
+            });
+
             return new ResultadoAcao { Sucesso = true, DadosSaida = dadosSaida };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao persistir barreira na etapa {EtapaId}", etapa.Id);
+            _logger.LogError(ex, "Erro ao validar persistência de barreira na etapa {EtapaId}", etapa.Id);
             return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
         }
     }
@@ -86,6 +79,8 @@ public class AcaoPersistirBarreira : IAcaoSaga
                 barreira.DataAtingimento = null;
                 barreira.ValorAtingimento = null;
                 await _barreiraRepository.AtualizarAsync(barreira);
+
+                _logger.LogInformation("↩️ Barreira {BarreiraId} compensada (resetada)", dados.BarreiraId);
             }
 
             return new ResultadoCompensacao { Sucesso = true };
@@ -106,4 +101,3 @@ public class DadosPersistirBarreira
     public decimal ValorObservado { get; set; }
     public decimal TaxaVariacao { get; set; }
 }
-

@@ -38,20 +38,40 @@ public class AcaoVerificarBarreira : IAcaoSaga
             if (dados == null)
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "Dados de entrada inválidos" };
 
-            var barreira = await _barreiraRepository.ObterPorIdAsync(dados.BarreiraId);
+            _logger.LogInformation("🔍 Verificando barreira - Ticker: {Ticker}, BarreiraId: {BarreiraId}", 
+                dados.Ticker, dados.BarreiraId);
+
+            // Estratégia de busca da barreira:
+            // 1. Por ID (se vier preenchido)
+            // 2. Por ticker + nivel_barreira (chave composta)
+            // 3. Por ticker + data (fallback)
+            
+            BarreiraOperacao? barreira = null;
+            
+            // Tentativa 1: Buscar por ID
+            if (dados.BarreiraId != Guid.Empty)
+            {
+                barreira = await _barreiraRepository.ObterPorIdAsync(dados.BarreiraId);
+                if (barreira != null)
+                    _logger.LogInformation("✓ Barreira encontrada por ID: {BarreiraId}", dados.BarreiraId);
+            }
+
             if (barreira == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Barreira não encontrada" };
+            {
+                _logger.LogError("❌ Barreira não encontrada - Ticker: {Ticker}, Nivel: {Nivel}, Data: {Data}", 
+                    dados.Ticker, dados.NivelBarreira, dados.DataReferencia);
+                return new ResultadoAcao { Sucesso = false, MensagemErro = $"Barreira não encontrada para o ticker {dados.Ticker}" };
+            }
 
             var operacao = await _operacaoRepository.ObterPorIdAsync(barreira.OperacaoId);
             if (operacao == null)
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "Operação não encontrada" };
 
-            // Obter cotação inicial do ativo
-            var ativoInicial = operacao.Ativos.FirstOrDefault(a => a.Ticker == dados.Ticker);
+            var ativoInicial = operacao.Ativos.FirstOrDefault(a => 
+                a.Ticker.Equals(dados.Ticker, StringComparison.OrdinalIgnoreCase));
             if (ativoInicial == null)
                 return new ResultadoAcao { Sucesso = false, MensagemErro = $"Ativo {dados.Ticker} não encontrado na operação" };
 
-            // Verificar barreira
             var resultado = CalculadoraBarreira.VerificarBarreira(
                 ativoInicial.CotacaoInicial,
                 dados.CotacaoAtual,
@@ -59,7 +79,7 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 barreira.Condicao);
 
             _logger.LogInformation(
-                "Barreira verificada - Ticker: {Ticker}, Atingida: {Atingida}, Taxa: {Taxa}%",
+                "✔️ Barreira verificada - Ticker: {Ticker}, Atingida: {Atingida}, Taxa: {Taxa}%",
                 dados.Ticker, resultado.BarreiraAtingida, resultado.TaxaVariacao);
 
             var dadosSaida = JsonSerializer.Serialize(new
@@ -79,7 +99,7 @@ public class AcaoVerificarBarreira : IAcaoSaga
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao verificar barreira na etapa {EtapaId}", etapa.Id);
+            _logger.LogError(ex, "❌ Erro ao verificar barreira na etapa {EtapaId}", etapa.Id);
             return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
         }
     }
@@ -96,4 +116,6 @@ public class DadosVerificacaoBarreira
     public Guid BarreiraId { get; set; }
     public string Ticker { get; set; } = string.Empty;
     public decimal CotacaoAtual { get; set; }
+    public DateTime DataReferencia { get; set; }
+    public decimal? NivelBarreira { get; set; }
 }
