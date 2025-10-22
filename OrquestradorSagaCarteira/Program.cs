@@ -75,6 +75,19 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
+// Inscrever observadores nos tópicos
+using (var scope = app.Services.CreateScope())
+{
+    var publicador = scope.ServiceProvider.GetRequiredService<IPublicadorEventos>();
+    var observadorBarreira = scope.ServiceProvider.GetRequiredService<ObservadorBarreira>();
+    var observadorAutoCall = scope.ServiceProvider.GetRequiredService<ObservadorAutoCall>();
+    var observadorDesfazimento = scope.ServiceProvider.GetRequiredService<ObservadorDesfazimentoOperacao>();
+
+    await publicador.InscreverObservadorAsync("topico.cotacao", observadorBarreira);
+    await publicador.InscreverObservadorAsync("topico.barreira", observadorAutoCall);
+    await publicador.InscreverObservadorAsync("topico.autocall", observadorDesfazimento);
+}
+
 app.Logger.LogInformation("🚀 Aplicação Orquestrador Saga Autocall iniciada");
 
 app.Run();

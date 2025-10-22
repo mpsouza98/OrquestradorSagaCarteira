@@ -64,7 +64,7 @@ Resposta esperada (resumo): nomes dos observadores e seus tópicos.
 
 ```json
 {
-  "codigoOperacao": "COE-TECH-2025",
+  "codigoOperacao": "COE-AUTOCALL-IA-2025",
   "descricao": "COE Tech Worst-Of (META, SNOW, MSFT, OPENAI)",
   "dataVencimento": "2026-10-21",
   "valorNominal": 100000.00,
@@ -76,10 +76,10 @@ Resposta esperada (resumo): nomes dos observadores e seus tópicos.
     { "ticker": "OPENAI", "cotacaoInicial": 100.00,   "percentualParticipacao": 25.0 }
   ],
   "barreiras": [
-    { "ticker": "META",   "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": "SNOW",   "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": "MSFT",   "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": "OPENAI", "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" }
+    { "ticker": "META",   "tipoBarreira": "AutoCall", "condicao": "UP", "dataObservacao": "2025-10-21" },
+    { "ticker": "SNOW",   "tipoBarreira": "AutoCall", "condicao": "UP", "dataObservacao": "2025-10-21" },
+    { "ticker": "MSFT",   "tipoBarreira": "AutoCall", "condicao": "UP", "dataObservacao": "2025-10-21" },
+    { "ticker": "OPENAI", "tipoBarreira": "AutoCall", "condicao": "UP", "dataObservacao": "2025-10-21" }
   ]
 }
 ```

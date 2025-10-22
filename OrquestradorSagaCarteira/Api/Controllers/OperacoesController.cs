@@ -59,6 +59,14 @@ public class OperacoesController : ControllerBase
             // Adicionar barreiras
             foreach (var barreira in request.Barreiras)
             {
+                // Buscar o ativo correspondente para obter a cotação inicial
+                var ativo = operacao.Ativos.FirstOrDefault(a => a.Ticker == barreira.Ticker);
+                if (ativo == null)
+                {
+                    _logger.LogWarning("⚠️ Ticker {Ticker} não encontrado nos ativos da operação", barreira.Ticker);
+                    continue;
+                }
+
                 operacao.Barreiras.Add(new BarreiraOperacao
                 {
                     Id = Guid.NewGuid(),
@@ -66,7 +74,7 @@ public class OperacoesController : ControllerBase
                     Ticker = barreira.Ticker,
                     TipoBarreira = barreira.TipoBarreira,
                     Condicao = barreira.Condicao,
-                    NivelBarreira = barreira.NivelBarreira,
+                    NivelBarreira = ativo.CotacaoInicial, // Usar a cotação inicial do ativo
                     DataObservacao = barreira.DataObservacao,
                     Atingida = false,
                     Ativa = true,
@@ -188,7 +196,5 @@ public class BarreiraRequest
     public string? Ticker { get; set; }
     public string TipoBarreira { get; set; } = string.Empty;
     public string Condicao { get; set; } = string.Empty;
-    public decimal NivelBarreira { get; set; }
     public DateTime DataObservacao { get; set; }
 }
-

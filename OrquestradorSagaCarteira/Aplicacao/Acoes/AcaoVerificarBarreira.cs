@@ -11,22 +11,13 @@ namespace OrquestradorSagaCarteira.Aplicacao.Acoes;
 public class AcaoVerificarBarreira : IAcaoSaga
 {
     private readonly IBarreiraRepository _barreiraRepository;
-    private readonly ICotacaoRepository _cotacaoRepository;
-    private readonly IOperacaoRepository _operacaoRepository;
-    private readonly CalculadoraBarreira _calculadora;
     private readonly ILogger<AcaoVerificarBarreira> _logger;
 
     public AcaoVerificarBarreira(
         IBarreiraRepository barreiraRepository,
-        ICotacaoRepository cotacaoRepository,
-        IOperacaoRepository operacaoRepository,
-        CalculadoraBarreira calculadora,
         ILogger<AcaoVerificarBarreira> logger)
     {
         _barreiraRepository = barreiraRepository;
-        _cotacaoRepository = cotacaoRepository;
-        _operacaoRepository = operacaoRepository;
-        _calculadora = calculadora;
         _logger = logger;
     }
 
@@ -63,17 +54,8 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 return new ResultadoAcao { Sucesso = false, MensagemErro = $"Barreira não encontrada para o ticker {dados.Ticker}" };
             }
 
-            var operacao = await _operacaoRepository.ObterPorIdAsync(barreira.OperacaoId);
-            if (operacao == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Operação não encontrada" };
-
-            var ativoInicial = operacao.Ativos.FirstOrDefault(a => 
-                a.Ticker.Equals(dados.Ticker, StringComparison.OrdinalIgnoreCase));
-            if (ativoInicial == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = $"Ativo {dados.Ticker} não encontrado na operação" };
-
             var resultado = CalculadoraBarreira.VerificarBarreira(
-                ativoInicial.CotacaoInicial,
+                barreira.NivelBarreira,
                 dados.CotacaoAtual,
                 barreira.NivelBarreira,
                 barreira.Condicao);
