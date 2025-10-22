@@ -10,7 +10,7 @@ public class CalculadoraBarreira
     /// <summary>
     /// Verifica se uma barreira foi atingida
     /// </summary>
-    public ResultadoVerificacaoBarreira VerificarBarreira(
+    public static ResultadoVerificacaoBarreira VerificarBarreira(
         decimal cotacaoInicial,
         decimal cotacaoAtual,
         decimal nivelBarreira,
@@ -38,7 +38,7 @@ public class CalculadoraBarreira
     /// <summary>
     /// Calcula a taxa de variação percentual
     /// </summary>
-    public decimal CalcularTaxaVariacao(decimal valorInicial, decimal valorAtual)
+    private static decimal CalcularTaxaVariacao(decimal valorInicial, decimal valorAtual)
     {
         if (valorInicial == 0)
             return 0;

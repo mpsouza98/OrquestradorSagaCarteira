@@ -194,7 +194,7 @@ Obtém barreiras do COE
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Port=3306;Database=saga_carteira_coe;Uid=root;Pwd=suasenha;"
+    "DefaultConnection": "Server=localhost;Port=3306;Database=saga_autocall;Uid=root;Pwd=suasenha;"
   }
 }
 ```

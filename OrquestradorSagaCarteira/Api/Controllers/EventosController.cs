@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace OrquestradorSagaCarteira.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/eventos")]
 public class EventosController : ControllerBase
 {
     private readonly ICotacaoRepository _cotacaoRepository;

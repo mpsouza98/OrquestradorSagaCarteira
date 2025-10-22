@@ -10,16 +10,16 @@ namespace OrquestradorSagaCarteira.Aplicacao.Observadores;
 /// </summary>
 public class ObservadorAutoCall : IObservador
 {
-    private readonly IOrquestradorSaga _orquestrador;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ObservadorAutoCall> _logger;
 
     public string NomeObservador => "ObservadorAutoCall";
 
     public ObservadorAutoCall(
-        IOrquestradorSaga orquestrador,
+        IServiceScopeFactory scopeFactory,
         ILogger<ObservadorAutoCall> logger)
     {
-        _orquestrador = orquestrador;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -35,6 +35,9 @@ public class ObservadorAutoCall : IObservador
             _logger.LogInformation(
                 "Iniciando saga para verificação de autocall - OperacaoId: {OperacaoId}",
                 evento.OperacaoId);
+
+            using var scope = _scopeFactory.CreateScope();
+            var orquestrador = scope.ServiceProvider.GetRequiredService<IOrquestradorSaga>();
 
             // Criar saga para processar autocall
             var saga = new Saga
@@ -99,7 +102,7 @@ public class ObservadorAutoCall : IObservador
                 DadosEntrada = "{}" // Será preenchido com dados da etapa anterior
             });
 
-            await _orquestrador.IniciarSagaAsync(saga);
+            await orquestrador.IniciarSagaAsync(saga);
         }
         catch (Exception ex)
         {
@@ -115,4 +118,3 @@ public class EventoBarreiraAtingida
     public string TipoEvento { get; set; } = string.Empty;
     public DateTime DataEvento { get; set; }
 }
-

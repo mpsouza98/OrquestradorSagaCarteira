@@ -5,7 +5,7 @@ using OrquestradorSagaCarteira.Aplicacao.Observadores;
 namespace OrquestradorSagaCarteira.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/sagas")]
 public class SagasController : ControllerBase
 {
     private readonly IOrquestradorSaga _orquestrador;

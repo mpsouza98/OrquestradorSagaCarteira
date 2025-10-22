@@ -52,7 +52,7 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 return new ResultadoAcao { Sucesso = false, MensagemErro = $"Ativo {dados.Ticker} não encontrado na operação" };
 
             // Verificar barreira
-            var resultado = _calculadora.VerificarBarreira(
+            var resultado = CalculadoraBarreira.VerificarBarreira(
                 ativoInicial.CotacaoInicial,
                 dados.CotacaoAtual,
                 barreira.NivelBarreira,

@@ -10,19 +10,16 @@ namespace OrquestradorSagaCarteira.Aplicacao.Observadores;
 /// </summary>
 public class ObservadorBarreira : IObservador
 {
-    private readonly IBarreiraRepository _barreiraRepository;
-    private readonly IOrquestradorSaga _orquestrador;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ObservadorBarreira> _logger;
 
     public string NomeObservador => "ObservadorBarreira";
 
     public ObservadorBarreira(
-        IBarreiraRepository barreiraRepository,
-        IOrquestradorSaga orquestrador,
+        IServiceScopeFactory scopeFactory,
         ILogger<ObservadorBarreira> logger)
     {
-        _barreiraRepository = barreiraRepository;
-        _orquestrador = orquestrador;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -35,8 +32,12 @@ public class ObservadorBarreira : IObservador
             var evento = JsonSerializer.Deserialize<EventoCotacao>(dadosEvento);
             if (evento == null) return;
 
+            using var scope = _scopeFactory.CreateScope();
+            var barreiraRepository = scope.ServiceProvider.GetRequiredService<IBarreiraRepository>();
+            var orquestrador = scope.ServiceProvider.GetRequiredService<IOrquestradorSaga>();
+
             // Buscar barreiras ativas para verificação
-            var barreiras = await _barreiraRepository.ObterBarreirasAtivasParaDataAsync(evento.Data);
+            var barreiras = await barreiraRepository.ObterBarreirasAtivasParaDataAsync(evento.Data);
             
             foreach (var barreira in barreiras.Where(b => b.Ticker == evento.Ticker))
             {
@@ -96,7 +97,7 @@ public class ObservadorBarreira : IObservador
                     DadosEntrada = "{}" // Será preenchido com dados da etapa anterior
                 });
 
-                await _orquestrador.IniciarSagaAsync(saga);
+                await orquestrador.IniciarSagaAsync(saga);
             }
         }
         catch (Exception ex)
@@ -113,4 +114,3 @@ public class EventoCotacao
     public decimal PrecoFechamento { get; set; }
     public string Fonte { get; set; } = string.Empty;
 }
-

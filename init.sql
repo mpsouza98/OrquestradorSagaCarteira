@@ -266,12 +266,12 @@ DELIMITER $$
 
 CREATE PROCEDURE sp_limpar_dados_teste()
 BEGIN
-DELETE FROM etapa_saga;
-DELETE FROM saga;
-DELETE FROM evento_autocall;
-DELETE FROM evento_barreira;
-DELETE FROM liquidacao_agendada;
-DELETE FROM cotacao WHERE data > DATE_ADD(CURDATE(), INTERVAL 1 DAY);
+    DELETE FROM etapa_saga;
+    DELETE FROM saga;
+    DELETE FROM evento_autocall;
+    DELETE FROM evento_barreira;
+    DELETE FROM liquidacao_agendada;
+    DELETE FROM cotacao WHERE data > DATE_ADD(CURDATE(), INTERVAL 1 DAY);
 END$$
 
 DELIMITER ;
@@ -280,52 +280,57 @@ DELIMITER $$
 
 CREATE PROCEDURE sp_estatisticas_sistema()
 BEGIN
-SELECT
-    'Operações Ativas' AS metrica,
-    COUNT(*) AS valor
-FROM operacao
-WHERE ativa = TRUE
-
-UNION ALL
-
-SELECT
-    'Total de Cotações',
-    COUNT(*)
-FROM cotacao
-
-UNION ALL
-
-SELECT
-    'Barreiras Atingidas',
-    COUNT(*)
-FROM barreira_operacao
-WHERE atingida = TRUE
-
-UNION ALL
-
-SELECT
-    'Sagas Executadas',
-    COUNT(*)
-FROM saga
-
-UNION ALL
-
-SELECT
-    'Liquidações Agendadas',
-    COUNT(*)
-FROM liquidacao_agendada
-WHERE status = 'Agendada';
+    SELECT 
+        'Operações Ativas' AS metrica,
+        COUNT(*) AS valor
+    FROM operacao
+    WHERE ativa = TRUE
+    
+    UNION ALL
+    
+    SELECT 
+        'Total de Cotações',
+        COUNT(*)
+    FROM cotacao
+    
+    UNION ALL
+    
+    SELECT 
+        'Barreiras Atingidas',
+        COUNT(*)
+    FROM barreira_operacao
+    WHERE atingida = TRUE
+    
+    UNION ALL
+    
+    SELECT 
+        'Sagas Executadas',
+        COUNT(*)
+    FROM saga
+    
+    UNION ALL
+    
+    SELECT 
+        'Liquidações Agendadas',
+        COUNT(*)
+    FROM liquidacao_agendada
+    WHERE status = 'Agendada';
 END$$
 
 DELIMITER ;
 
--- Mensagem final
-SELECT '✅ Base de dados inicializada com sucesso!' AS status;
-
-SELECT * FROM vw_operacoes_completas;
+-- ==========================
+-- CHAMADAS DAS PROCEDURES
+-- ==========================
 
 -- Exibir estatísticas do sistema
 CALL sp_estatisticas_sistema();
 
--- Limpar dados de teste (use com cuidado!)
--- CALL sp_limpar_dados_teste();
+-- Verificar operações criadas
+SELECT * FROM vw_operacoes_completas;
+
+-- Verificar cotações inseridas
+SELECT ticker_ativo, data, preco_fechamento FROM cotacao ORDER BY ticker_ativo, data;
+
+-- Mensagem final
+SELECT '✅ Base de dados inicializada com sucesso!' AS status;
