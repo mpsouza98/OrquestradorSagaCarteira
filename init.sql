@@ -262,62 +262,70 @@ GROUP BY s.id, s.tipo_saga, s.estado_saga, s.data_criacao, s.data_finalizacao;
 -- PROCEDURES ÚTEIS
 -- ==========================
 
-DELIMITER //
+DELIMITER $$
 
--- Procedure para limpar dados de teste
 CREATE PROCEDURE sp_limpar_dados_teste()
 BEGIN
-    DELETE FROM etapa_saga;
-    DELETE FROM saga;
-    DELETE FROM evento_autocall;
-    DELETE FROM evento_barreira;
-    DELETE FROM liquidacao_agendada;
-    DELETE FROM cotacao WHERE data > DATE_ADD(CURDATE(), INTERVAL 1 DAY);
-END //
+DELETE FROM etapa_saga;
+DELETE FROM saga;
+DELETE FROM evento_autocall;
+DELETE FROM evento_barreira;
+DELETE FROM liquidacao_agendada;
+DELETE FROM cotacao WHERE data > DATE_ADD(CURDATE(), INTERVAL 1 DAY);
+END$$
 
--- Procedure para obter estatísticas do sistema
+DELIMITER ;
+
+DELIMITER $$
+
 CREATE PROCEDURE sp_estatisticas_sistema()
 BEGIN
-    SELECT 
-        'Operações Ativas' AS metrica,
-        COUNT(*) AS valor
-    FROM operacao
-    WHERE ativa = TRUE
-    
-    UNION ALL
-    
-    SELECT 
-        'Total de Cotações',
-        COUNT(*)
-    FROM cotacao
-    
-    UNION ALL
-    
-    SELECT 
-        'Barreiras Atingidas',
-        COUNT(*)
-    FROM barreira_operacao
-    WHERE atingida = TRUE
-    
-    UNION ALL
-    
-    SELECT 
-        'Sagas Executadas',
-        COUNT(*)
-    FROM saga
-    
-    UNION ALL
-    
-    SELECT 
-        'Liquidações Agendadas',
-        COUNT(*)
-    FROM liquidacao_agendada
-    WHERE status = 'Agendada';
-END //
+SELECT
+    'Operações Ativas' AS metrica,
+    COUNT(*) AS valor
+FROM operacao
+WHERE ativa = TRUE
+
+UNION ALL
+
+SELECT
+    'Total de Cotações',
+    COUNT(*)
+FROM cotacao
+
+UNION ALL
+
+SELECT
+    'Barreiras Atingidas',
+    COUNT(*)
+FROM barreira_operacao
+WHERE atingida = TRUE
+
+UNION ALL
+
+SELECT
+    'Sagas Executadas',
+    COUNT(*)
+FROM saga
+
+UNION ALL
+
+SELECT
+    'Liquidações Agendadas',
+    COUNT(*)
+FROM liquidacao_agendada
+WHERE status = 'Agendada';
+END$$
 
 DELIMITER ;
 
 -- Mensagem final
 SELECT '✅ Base de dados inicializada com sucesso!' AS status;
+
 SELECT * FROM vw_operacoes_completas;
 
+-- Exibir estatísticas do sistema
+CALL sp_estatisticas_sistema();
+
+-- Limpar dados de teste (use com cuidado!)
+-- CALL sp_limpar_dados_teste();
