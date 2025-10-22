@@ -43,7 +43,7 @@ public class ObservadorBarreira : IObservador
                 "📊 Encontradas {Qtd} barreiras ativas para o ticker {Ticker}",
                 barreirasDoTicker.Count, evento.Ticker);
 
-            if (!barreirasDoTicker.Any())
+            if (barreirasDoTicker.Count == 0)
             {
                 _logger.LogInformation("➖ Nenhuma barreira ativa encontrada para processar");
                 return;
@@ -59,27 +59,10 @@ public class ObservadorBarreira : IObservador
                 DataAtualizacao = DateTime.UtcNow,
                 DadosContexto = JsonSerializer.Serialize(new
                 {
-                    evento.Ticker,
-                    CotacaoAtual = evento.PrecoFechamento,
-                    DataEvento = evento.Data,
-                    QuantidadeBarreiras = barreirasDoTicker.Count
-                })
-            };
-
-            // Etapa 1: Verificar Barreiras (em lote)
-            saga.Etapas.Add(new EtapaSaga
-            {
-                Id = Guid.NewGuid(),
-                SagaId = saga.Id,
-                NomeEtapa = "Verificar Barreiras",
-                OrdemExecucao = 1,
-                EstadoEtapa = EstadoEtapa.Pendente,
-                TipoAcao = TipoAcao.VerificarBarreira,
-                DadosEntrada = JsonSerializer.Serialize(new
-                {
                     Ticker = evento.Ticker,
                     CotacaoAtual = evento.PrecoFechamento,
                     DataReferencia = evento.Data,
+                    Fonte = evento.Fonte,
                     Barreiras = barreirasDoTicker.Select(b => new
                     {
                         BarreiraId = b.Id,
@@ -88,6 +71,18 @@ public class ObservadorBarreira : IObservador
                         Condicao = b.Condicao
                     }).ToList()
                 })
+            };
+
+            // Etapa 1: Verificar Barreiras (em lote) - Lê do DadosContexto
+            saga.Etapas.Add(new EtapaSaga
+            {
+                Id = Guid.NewGuid(),
+                SagaId = saga.Id,
+                NomeEtapa = "Verificar Barreiras",
+                OrdemExecucao = 1,
+                EstadoEtapa = EstadoEtapa.Pendente,
+                TipoAcao = TipoAcao.VerificarBarreira,
+                DadosEntrada = "{}" // Dados virão do contexto da saga
             });
 
             // Etapa 2: Persistir Barreiras Atingidas (em lote)

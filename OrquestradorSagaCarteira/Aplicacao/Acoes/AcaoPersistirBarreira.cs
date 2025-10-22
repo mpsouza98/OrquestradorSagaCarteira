@@ -35,6 +35,22 @@ public class AcaoPersistirBarreira : IAcaoSaga
                 return new ResultadoAcao { Sucesso = true, DadosSaida = "{}" };
             }
 
+            // Obter fonte do contexto da saga
+            var fonte = "";
+            if (etapa.Saga != null && !string.IsNullOrEmpty(etapa.Saga.DadosContexto))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(etapa.Saga.DadosContexto);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("Fonte", out var fonteElement))
+                    {
+                        fonte = fonteElement.GetString() ?? "";
+                    }
+                }
+                catch { /* Ignora erro ao buscar fonte */ }
+            }
+
             _logger.LogInformation("💾 Persistindo {Qtd} barreiras atingidas em lote", dados.BarreirasAtingidas.Count);
 
             var barreiraIds = dados.BarreirasAtingidas.Select(b => b.BarreiraId).ToList();
@@ -82,7 +98,7 @@ public class AcaoPersistirBarreira : IAcaoSaga
                         CotacaoAtual = resultado.ValorObservado,
                         resultado.TaxaVariacao,
                         resultado.Condicao,
-                        Fonte = dados.Fonte
+                        Fonte = fonte
                     })
                 };
 

@@ -17,11 +17,39 @@ public class SagaRepository : ISagaRepository
     {
         using var connection = _connectionFactory.CreateConnection();
         
-        const string sql = @"
-            SELECT * FROM saga WHERE id = @Id;
-            SELECT * FROM etapa_saga WHERE saga_id = @Id ORDER BY ordem_execucao;";
+        const string sql = """
 
-        using var multi = await connection.QueryMultipleAsync(sql, new { Id = id });
+                                       SELECT 
+                                           id AS Id,
+                                           tipo_saga AS TipoSaga,
+                                           estado_saga AS EstadoSaga,
+                                           data_criacao AS DataCriacao,
+                                           data_atualizacao AS DataAtualizacao,
+                                           data_finalizacao AS DataFinalizacao,
+                                           dados_contexto AS DadosContexto,
+                                           mensagem_erro AS MensagemErro
+                                       FROM saga 
+                                       WHERE id = @Id;
+                                       
+                                       SELECT 
+                                           id AS Id,
+                                           saga_id AS SagaId,
+                                           nome_etapa AS NomeEtapa,
+                                           ordem_execucao AS OrdemExecucao,
+                                           estado_etapa AS EstadoEtapa,
+                                           tipo_acao AS TipoAcao,
+                                           data_inicio AS DataInicio,
+                                           data_finalizacao AS DataFinalizacao,
+                                           dados_entrada AS DadosEntrada,
+                                           dados_saida AS DadosSaida,
+                                           mensagem_erro AS MensagemErro,
+                                           tentativas AS Tentativas
+                                       FROM etapa_saga 
+                                       WHERE saga_id = @Id 
+                                       ORDER BY ordem_execucao;
+                           """;
+
+        await using var multi = await connection.QueryMultipleAsync(sql, new { Id = id });
         
         var saga = await multi.ReadSingleOrDefaultAsync<Saga>();
         if (saga != null)
@@ -36,10 +64,21 @@ public class SagaRepository : ISagaRepository
     {
         using var connection = _connectionFactory.CreateConnection();
         
-        const string sql = @"
-            SELECT * FROM saga 
-            ORDER BY data_criacao DESC 
-            LIMIT @Limit OFFSET @Offset";
+        const string sql = """
+
+                                       SELECT 
+                                           id AS Id,
+                                           tipo_saga AS TipoSaga,
+                                           estado_saga AS EstadoSaga,
+                                           data_criacao AS DataCriacao,
+                                           data_atualizacao AS DataAtualizacao,
+                                           data_finalizacao AS DataFinalizacao,
+                                           dados_contexto AS DadosContexto,
+                                           mensagem_erro AS MensagemErro
+                                       FROM saga 
+                                       ORDER BY data_criacao DESC 
+                                       LIMIT @Limit OFFSET @Offset
+                           """;
         
         var sagas = await connection.QueryAsync<Saga>(sql, new 
         { 
@@ -109,4 +148,3 @@ public class SagaRepository : ISagaRepository
         }
     }
 }
-

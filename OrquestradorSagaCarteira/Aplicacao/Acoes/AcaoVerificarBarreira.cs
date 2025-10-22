@@ -8,38 +8,52 @@ namespace OrquestradorSagaCarteira.Aplicacao.Acoes;
 
 /// <summary>
 /// Ação para verificar se barreiras foram atingidas (processamento em lote)
+/// Lê os dados das barreiras do DadosContexto da saga
 /// </summary>
 public class AcaoVerificarBarreira : IAcaoSaga
 {
-    private readonly IBarreiraRepository _barreiraRepository;
     private readonly ILogger<AcaoVerificarBarreira> _logger;
 
     public AcaoVerificarBarreira(
-        IBarreiraRepository barreiraRepository,
         ILogger<AcaoVerificarBarreira> logger)
     {
-        _barreiraRepository = barreiraRepository;
         _logger = logger;
     }
 
-    public Task<ResultadoAcao> ExecutarAsync(EtapaSaga etapa)
+    public async Task<ResultadoAcao> ExecutarAsync(EtapaSaga etapa)
     {
         try
         {
-            var dados = JsonSerializer.Deserialize<DadosVerificacaoBarreira>(etapa.DadosEntrada ?? "{}");
-            if (dados == null || dados.Barreiras.Count == 0)
-                return Task.FromResult(new ResultadoAcao { Sucesso = false, MensagemErro = "Nenhuma barreira para verificar" });
+            // Obter dados do contexto da saga ao invés de DadosEntrada
+            if (etapa.Saga == null || string.IsNullOrEmpty(etapa.Saga.DadosContexto))
+            {
+                return new ResultadoAcao { Sucesso = false, MensagemErro = "Contexto da saga não disponível" };
+            }
 
-            _logger.LogInformation("🔍 Verificando {Qtd} barreiras em lote - Cotação: {Cotacao}", 
-                dados.Barreiras.Count, dados.CotacaoAtual);
+            var contexto = JsonSerializer.Deserialize<ContextoBarreira>(etapa.Saga.DadosContexto);
+            if (contexto == null || contexto.Barreiras == null || !contexto.Barreiras.Any())
+            {
+                _logger.LogInformation("ℹ️ Nenhuma barreira para verificar no contexto");
+                return new ResultadoAcao { Sucesso = true, DadosSaida = JsonSerializer.Serialize(new
+                {
+                    TotalVerificadas = 0,
+                    TotalAtingidas = 0,
+                    Resultados = new List<ResultadoVerificacaoBarreira>(),
+                    Ticker = contexto?.Ticker ?? "",
+                    CotacaoAtual = contexto?.CotacaoAtual ?? 0
+                })};
+            }
+
+            _logger.LogInformation("🔍 Verificando {Qtd} barreiras em lote - Ticker: {Ticker}, Cotação: {Cotacao}", 
+                contexto.Barreiras.Count, contexto.Ticker, contexto.CotacaoAtual);
 
             var resultados = new List<ResultadoVerificacaoBarreira>();
 
-            foreach (var barreiraInfo in dados.Barreiras)
+            foreach (var barreiraInfo in contexto.Barreiras)
             {
                 var resultado = CalculadoraBarreira.VerificarBarreira(
                     barreiraInfo.NivelBarreira,
-                    dados.CotacaoAtual,
+                    contexto.CotacaoAtual,
                     barreiraInfo.NivelBarreira,
                     barreiraInfo.Condicao);
 
@@ -54,8 +68,8 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 });
 
                 _logger.LogInformation(
-                    "📊 Barreira {BarreiraId} - Atingida: {Atingida}, Taxa: {Taxa}%",
-                    barreiraInfo.BarreiraId, resultado.BarreiraAtingida, resultado.TaxaVariacao);
+                    "📊 Barreira {BarreiraId} (Operacao: {OperacaoId}) - Atingida: {Atingida}, Taxa: {Taxa}%",
+                    barreiraInfo.BarreiraId, barreiraInfo.OperacaoId, resultado.BarreiraAtingida, resultado.TaxaVariacao);
             }
 
             var barreiraAtingidas = resultados.Where(r => r.BarreiraAtingida).ToList();
@@ -69,20 +83,20 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 TotalVerificadas = resultados.Count,
                 TotalAtingidas = barreiraAtingidas.Count,
                 Resultados = barreiraAtingidas,
-                Ticker = dados.Ticker,
-                CotacaoAtual = dados.CotacaoAtual
+                Ticker = contexto.Ticker,
+                CotacaoAtual = contexto.CotacaoAtual
             });
 
-            return Task.FromResult(new ResultadoAcao
+            return new ResultadoAcao
             {
                 Sucesso = true,
                 DadosSaida = dadosSaida
-            });
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "❌ Erro ao verificar barreiras na etapa {EtapaId}", etapa.Id);
-            return Task.FromResult(new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message });
+            return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
         }
     }
 
@@ -93,11 +107,13 @@ public class AcaoVerificarBarreira : IAcaoSaga
     }
 }
 
-public class DadosVerificacaoBarreira
+// Classes de contexto para deserialização
+public class ContextoBarreira
 {
     public string Ticker { get; set; } = string.Empty;
     public decimal CotacaoAtual { get; set; }
     public DateTime DataReferencia { get; set; }
+    public string Fonte { get; set; } = string.Empty;
     public List<BarreiraParaVerificar> Barreiras { get; set; } = new();
 }
 

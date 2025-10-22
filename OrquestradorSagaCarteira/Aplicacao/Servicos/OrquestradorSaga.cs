@@ -26,9 +26,9 @@ public class OrquestradorSaga : IOrquestradorSaga
         saga.EstadoSaga = EstadoSaga.Iniciada;
         saga.DataCriacao = DateTime.UtcNow;
         saga.DataAtualizacao = DateTime.UtcNow;
-
+        
         // Atribuir IDs e ordem às etapas
-        for (int i = 0; i < saga.Etapas.Count; i++)
+        for (var i = 0; i < saga.Etapas.Count; i++)
         {
             saga.Etapas[i].Id = Guid.NewGuid();
             saga.Etapas[i].SagaId = saga.Id;
@@ -56,13 +56,7 @@ public class OrquestradorSaga : IOrquestradorSaga
             _logger.LogError("❌ Saga {SagaId} não encontrada", sagaId);
             return;
         }
-
-        // Garante a associação da Saga em todas as etapas carregadas
-        foreach (var etapa in saga.Etapas)
-        {
-            etapa.Saga = saga;
-        }
-
+        
         // Buscar próxima etapa pendente
         var proximaEtapa = saga.Etapas
             .Where(e => e.EstadoEtapa == EstadoEtapa.Pendente)
@@ -80,10 +74,6 @@ public class OrquestradorSaga : IOrquestradorSaga
             _logger.LogInformation("✅ Saga {SagaId} concluída com sucesso", sagaId);
             return;
         }
-
-        // Garante que a próxima etapa também está com a navegação preenchida
-        proximaEtapa.Saga = saga;
-        proximaEtapa.SagaId = sagaId;
 
         // Executar etapa
         proximaEtapa.EstadoEtapa = EstadoEtapa.EmExecucao;
@@ -272,32 +262,40 @@ public class OrquestradorSaga : IOrquestradorSaga
             using var doc = System.Text.Json.JsonDocument.Parse(dadosEntrada);
             var root = doc.RootElement;
 
-            // Transformação: VerificarBarreira -> PersistirBarreira
-            if (tipoAcaoOrigem == TipoAcao.VerificarBarreira && tipoAcaoDestino == TipoAcao.PersistirBarreira)
+            switch (tipoAcaoOrigem)
             {
-                var resultados = root.GetProperty("Resultados");
-                var fonte = root.TryGetProperty("Ticker", out var tickerProp) ? tickerProp.GetString() : "";
-                
-                return System.Text.Json.JsonSerializer.Serialize(new
+                // Transformação: VerificarBarreira -> PersistirBarreira
+                case TipoAcao.VerificarBarreira when tipoAcaoDestino == TipoAcao.PersistirBarreira:
                 {
-                    BarreirasAtingidas = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(resultados.GetRawText()),
-                    Fonte = fonte
-                });
-            }
-
-            // Transformação: PersistirBarreira -> NotificarBarreiraAtingida
-            if (tipoAcaoOrigem == TipoAcao.PersistirBarreira && tipoAcaoDestino == TipoAcao.NotificarBarreiraAtingida)
-            {
-                var eventos = root.GetProperty("Eventos");
+                    var resultados = root.GetProperty("Resultados");
+                    var fonte = root.TryGetProperty("Ticker", out var tickerProp) ? tickerProp.GetString() : "";
                 
-                return System.Text.Json.JsonSerializer.Serialize(new
+                    return System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        BarreirasAtingidas = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(resultados.GetRawText()),
+                        Fonte = fonte
+                    });
+                }
+                // Transformação: PersistirBarreira -> NotificarBarreiraAtingida
+                case TipoAcao.PersistirBarreira when tipoAcaoDestino == TipoAcao.NotificarBarreiraAtingida:
                 {
-                    Eventos = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(eventos.GetRawText())
-                });
+                    var eventos = root.GetProperty("Eventos");
+                
+                    return System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        Eventos = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(eventos.GetRawText())
+                    });
+                }
+                case TipoAcao.NotificarBarreiraAtingida:
+                case TipoAcao.AgregarCesta:
+                case TipoAcao.VerificarAutoCall:
+                case TipoAcao.PersistirAutoCall:
+                case TipoAcao.NotificarAutoCall:
+                case TipoAcao.AgendarDesfazimentoOperacao:
+                default:
+                    // Por padrão, retorna os dados sem transformação
+                    return dadosEntrada;
             }
-
-            // Por padrão, retorna os dados sem transformação
-            return dadosEntrada;
         }
         catch (Exception ex)
         {
