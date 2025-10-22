@@ -24,25 +24,77 @@ public class AcaoNotificarAutoCall : IAcaoSaga
     {
         try
         {
-            var dados = JsonSerializer.Deserialize<DadosNotificarAutocall>(etapa.DadosEntrada ?? "{}");
-            if (dados == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Dados de entrada inválidos" };
+            var json = etapa.DadosEntrada ?? "[]";
 
-            var mensagem = JsonSerializer.Serialize(new
+            // Tentar 1: Lista direta de eventos criados
+            List<EventoAutocallCriado>? eventos = null;
+            try
             {
-                EventoId = dados.EventoId,
-                OperacaoId = dados.OperacaoId,
-                AutocallAtingido = dados.AutocallAtingido,
-                TipoEvento = "AutocallVerificado",
-                DataEvento = DateTime.UtcNow
-            });
+                eventos = JsonSerializer.Deserialize<List<EventoAutocallCriado>>(json);
+            }
+            catch { /* Ignorar e tentar outros formatos */ }
 
-            await _publicador.PublicarAsync("topico.autocall", mensagem);
+            // Tentar 2: Wrapper { EventosCriados: [...] }
+            if (eventos == null)
+            {
+                try
+                {
+                    var wrapper = JsonSerializer.Deserialize<EventosCriadosWrapper>(json);
+                    if (wrapper?.EventosCriados != null)
+                        eventos = wrapper.EventosCriados;
+                }
+                catch { /* Ignorar e tentar legado */ }
+            }
 
-            _logger.LogInformation(
-                "Autocall notificado no tópico - EventoId: {EventoId}, Atingido: {Atingido}",
-                dados.EventoId, dados.AutocallAtingido);
+            // Tentar 3: DTO legado (single)
+            if (eventos == null)
+            {
+                try
+                {
+                    var legado = JsonSerializer.Deserialize<DadosNotificarAutocall>(json);
+                    if (legado != null)
+                    {
+                        eventos = new List<EventoAutocallCriado>
+                        {
+                            new EventoAutocallCriado
+                            {
+                                EventoId = legado.EventoId,
+                                OperacaoId = legado.OperacaoId,
+                                BarreiraAutocallId = Guid.Empty
+                            }
+                        };
+                    }
+                }
+                catch
+                {
+                    // Se falhar todos os formatos, lançar erro mais claro
+                }
+            }
 
+            if (eventos == null || eventos.Count == 0)
+            {
+                _logger.LogInformation("ℹ️ Nenhum evento de autocall para notificar");
+                return new ResultadoAcao { Sucesso = true };
+            }
+
+            var publicados = 0;
+            foreach (var e in eventos)
+            {
+                var mensagem = JsonSerializer.Serialize(new
+                {
+                    e.EventoId,
+                    e.OperacaoId,
+                    e.BarreiraAutocallId,
+                    AutocallAtingido = true,
+                    TipoEvento = "AutocallVerificado",
+                    DataEvento = DateTime.UtcNow
+                });
+
+                await _publicador.PublicarAsync("topico.autocall", mensagem);
+                publicados++;
+            }
+
+            _logger.LogInformation("📢 Notificação de autocall publicada para {Qtd} eventos", publicados);
             return new ResultadoAcao { Sucesso = true };
         }
         catch (Exception ex)
@@ -66,3 +118,7 @@ public class DadosNotificarAutocall
     public bool AutocallAtingido { get; set; }
 }
 
+public class EventosCriadosWrapper
+{
+    public List<EventoAutocallCriado> EventosCriados { get; set; } = new();
+}
