@@ -76,11 +76,10 @@ Resposta esperada (resumo): nomes dos observadores e seus tópicos.
     { "ticker": "OPENAI", "cotacaoInicial": 100.00,   "percentualParticipacao": 25.0 }
   ],
   "barreiras": [
-    { "ticker": "META",   "tipoBarreira": "KnockIn", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": "SNOW",   "tipoBarreira": "KnockIn", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": "MSFT",   "tipoBarreira": "KnockIn", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": "OPENAI", "tipoBarreira": "KnockIn", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
-    { "ticker": null,      "tipoBarreira": "Autocall", "condicao": "UP", "nivelBarreira": 5.00, "dataObservacao": "2025-11-21" }
+    { "ticker": "META",   "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
+    { "ticker": "SNOW",   "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
+    { "ticker": "MSFT",   "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" },
+    { "ticker": "OPENAI", "tipoBarreira": "AutoCall", "condicao": "UP", "nivelBarreira": 0.00,  "dataObservacao": "2025-10-21" }
   ]
 }
 ```
