@@ -20,28 +20,28 @@ public class AcaoVerificarBarreira : IAcaoSaga
         _logger = logger;
     }
 
-    public async Task<ResultadoAcao> ExecutarAsync(EtapaSaga etapa)
+    public Task<ResultadoAcao> ExecutarAsync(EtapaSaga etapa)
     {
         try
         {
             // Obter dados do contexto da saga ao invés de DadosEntrada
-            if (etapa.Saga == null || string.IsNullOrEmpty(etapa.Saga.DadosContexto))
+            if (string.IsNullOrEmpty(etapa.Saga.DadosContexto))
             {
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Contexto da saga não disponível" };
+                return Task.FromResult(new ResultadoAcao { Sucesso = false, MensagemErro = "Contexto da saga não disponível" });
             }
 
             var contexto = JsonSerializer.Deserialize<ContextoBarreira>(etapa.Saga.DadosContexto);
-            if (contexto == null || contexto.Barreiras == null || !contexto.Barreiras.Any())
+            if (contexto == null || contexto.Barreiras.Count == 0)
             {
                 _logger.LogInformation("ℹ️ Nenhuma barreira para verificar no contexto");
-                return new ResultadoAcao { Sucesso = true, DadosSaida = JsonSerializer.Serialize(new
+                return Task.FromResult(new ResultadoAcao { Sucesso = true, DadosSaida = JsonSerializer.Serialize(new
                 {
                     TotalVerificadas = 0,
                     TotalAtingidas = 0,
                     Resultados = new List<ResultadoVerificacaoBarreira>(),
                     Ticker = contexto?.Ticker ?? "",
                     CotacaoAtual = contexto?.CotacaoAtual ?? 0
-                })};
+                })});
             }
 
             _logger.LogInformation("🔍 Verificando {Qtd} barreiras em lote - Ticker: {Ticker}, Cotação: {Cotacao}", 
@@ -87,16 +87,16 @@ public class AcaoVerificarBarreira : IAcaoSaga
                 CotacaoAtual = contexto.CotacaoAtual
             });
 
-            return new ResultadoAcao
+            return Task.FromResult(new ResultadoAcao
             {
                 Sucesso = true,
                 DadosSaida = dadosSaida
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "❌ Erro ao verificar barreiras na etapa {EtapaId}", etapa.Id);
-            return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
+            return Task.FromResult(new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message });
         }
     }
 

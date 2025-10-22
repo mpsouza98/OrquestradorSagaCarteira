@@ -41,6 +41,24 @@ public class BarreiraRepository : IBarreiraRepository
         var barreiras = await connection.QueryAsync<BarreiraOperacao>(sql, new { OperacaoId = operacaoId });
         return barreiras.ToList();
     }
+
+    public async Task<List<BarreiraOperacao>> ObterPorOperacoesAsync(IEnumerable<Guid> operacaoIds)
+    {
+        var ids = operacaoIds?.Distinct().ToArray() ?? Array.Empty<Guid>();
+        if (ids.Length == 0) return new List<BarreiraOperacao>();
+
+        using var connection = _connectionFactory.CreateConnection();
+        // Postgres: usar ANY(@OperacaoIds) com array de uuid
+        var sql = $@"
+            SELECT {CamposSelecionados}
+            FROM barreira_operacao
+            WHERE operacao_id = ANY(@OperacaoIds)
+            ORDER BY operacao_id, data_observacao";
+
+        var barreiras = await connection.QueryAsync<BarreiraOperacao>(sql, new { OperacaoIds = ids });
+        return barreiras.ToList();
+    }
+
     public async Task<List<BarreiraOperacao>> ObterBarreirasAtivasPorTickerAsync(string ticker)
     {
         using var connection = _connectionFactory.CreateConnection();

@@ -1,26 +1,26 @@
 ﻿using System.Text.Json;
-using Calculadora.Core.Services;
 using OrquestradorSagaCarteira.Dominio.Entidades;
 using OrquestradorSagaCarteira.Dominio.Interfaces;
 
 namespace OrquestradorSagaCarteira.Aplicacao.Acoes;
 
 /// <summary>
-/// Ação para verificar se autocall foi atingido (BestOf ou WorstOf)
+/// Ação para verificar se autocall foi atingido para operações
+/// Regra: Autocall é atingido quando TODAS as barreiras (não-Autocall) de uma operação estão atingidas
 /// </summary>
 public class AcaoVerificarAutoCall : IAcaoSaga
 {
     private readonly IBarreiraRepository _barreiraRepository;
-    private readonly CalculadoraAutocall _calculadora;
+    private readonly IPublicadorEventos _publicador;
     private readonly ILogger<AcaoVerificarAutoCall> _logger;
 
     public AcaoVerificarAutoCall(
         IBarreiraRepository barreiraRepository,
-        CalculadoraAutocall calculadora,
+        IPublicadorEventos publicador,
         ILogger<AcaoVerificarAutoCall> logger)
     {
         _barreiraRepository = barreiraRepository;
-        _calculadora = calculadora;
+        _publicador = publicador;
         _logger = logger;
     }
 
@@ -28,60 +28,103 @@ public class AcaoVerificarAutoCall : IAcaoSaga
     {
         try
         {
-            var dados = JsonSerializer.Deserialize<DadosVerificarAutocall>(etapa.DadosEntrada ?? "{}");
-            if (dados == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Dados de entrada inválidos" };
+            // 1) Ler do contexto persistido da saga
+            if (string.IsNullOrEmpty(etapa.Saga.DadosContexto))
+                return new ResultadoAcao { Sucesso = false, MensagemErro = "Contexto da saga não disponível" };
 
-            // Buscar barreira de autocall da operação
-            var barreiras = await _barreiraRepository.ObterPorOperacaoAsync(dados.OperacaoId);
-            var barreiraAutocall = barreiras.FirstOrDefault(b => 
-                b.TipoBarreira == "Autocall" && b.Ativa && !b.Atingida);
+            var contexto = JsonSerializer.Deserialize<ContextoComBarreiras>(etapa.Saga.DadosContexto) ?? new();
+            var operacaoIds = contexto.Barreiras
+                .Select(b => b.OperacaoId)
+                .Distinct()
+                .ToList();
 
-            if (barreiraAutocall == null)
+            if (!operacaoIds.Any())
             {
-                _logger.LogWarning("Barreira de autocall não encontrada para operação {OperacaoId}", dados.OperacaoId);
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Barreira de autocall não encontrada" };
+                _logger.LogInformation("ℹ️ Nenhuma operação para verificar autocall");
+                return new ResultadoAcao { Sucesso = true, DadosSaida = JsonSerializer.Serialize(new { OperacoesNotificadas = new List<Guid>() }) };
             }
 
-            // Verificar se autocall foi atingido
-            var autocallAtingido = dados.ValorCesta >= barreiraAutocall.NivelBarreira;
+            _logger.LogInformation("🔍 Verificando autocall para {Qtd} operações (consulta única)", operacaoIds.Count);
 
-            _logger.LogInformation(
-                "Autocall verificado - Operacao: {OperacaoId}, Atingido: {Atingido}, Valor: {Valor}%, Barreira: {Barreira}%",
-                dados.OperacaoId, autocallAtingido, dados.ValorCesta, barreiraAutocall.NivelBarreira);
+            // 2) Consultar todas as barreiras das operações em uma única query
+            var barreiras = await _barreiraRepository.ObterPorOperacoesAsync(operacaoIds);
+
+            // 3) Agrupar por operação (operacaoId => lista de barreiras)
+            var porOperacao = barreiras
+                .GroupBy(b => b.OperacaoId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            // 4) Filtrar operações cuja cesta (todas barreiras não-Autocall e ativas) está totalmente atingida
+            var operacoesElegiveis = porOperacao
+                .Where(kv => kv.Value
+                    .Where(b => b.Ativa && b.TipoBarreira != "Autocall")
+                    .All(b => b.Atingida))
+                .Select(kv => new
+                {
+                    OperacaoId = kv.Key,
+                    BarreiraAutocall = kv.Value.FirstOrDefault(b => b.TipoBarreira == "Autocall" && b.Ativa)
+                })
+                .Where(x => x.BarreiraAutocall != null)
+                .ToList();
+
+            if (!operacoesElegiveis.Any())
+            {
+                _logger.LogInformation("➖ Nenhuma operação elegível para autocall neste ciclo");
+                return new ResultadoAcao { Sucesso = true, DadosSaida = JsonSerializer.Serialize(new { OperacoesNotificadas = new List<Guid>() }) };
+            }
+
+            // 5) Notificar evento de autocall para cada operação elegível
+            var notificadas = new List<Guid>();
+            foreach (var op in operacoesElegiveis)
+            {
+                var mensagem = JsonSerializer.Serialize(new
+                {
+                    OperacaoId = op.OperacaoId,
+                    BarreiraAutocallId = op.BarreiraAutocall!.Id,
+                    AutocallAtingido = true,
+                    TipoEvento = "AutocallVerificado",
+                    DataEvento = DateTime.UtcNow
+                });
+
+                await _publicador.PublicarAsync("topico.autocall", mensagem);
+                notificadas.Add(op.OperacaoId);
+
+                _logger.LogInformation("✉️ Autocall notificado - OperacaoId: {OperacaoId}, BarreiraAutocallId: {BarreiraId}",
+                    op.OperacaoId, op.BarreiraAutocall!.Id);
+            }
 
             var dadosSaida = JsonSerializer.Serialize(new
             {
-                AutocallAtingido = autocallAtingido,
-                ValorCesta = dados.ValorCesta,
-                NivelBarreira = barreiraAutocall.NivelBarreira,
-                TipoEstrutura = dados.TipoEstrutura,
-                BarreiraId = barreiraAutocall.Id,
-                OperacaoId = dados.OperacaoId,
-                dados.Ativos
+                TotalOperacoes = operacaoIds.Count,
+                OperacoesNotificadas = notificadas
             });
 
             return new ResultadoAcao { Sucesso = true, DadosSaida = dadosSaida };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao verificar autocall na etapa {EtapaId}", etapa.Id);
+            _logger.LogError(ex, "❌ Erro ao verificar autocall na etapa {EtapaId}", etapa.Id);
             return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
         }
     }
 
     public async Task<ResultadoCompensacao> CompensarAsync(EtapaSaga etapa)
     {
-        // Verificação de autocall não requer compensação
+        // Notificação publicada não requer compensação neste fluxo
         return await Task.FromResult(new ResultadoCompensacao { Sucesso = true });
     }
 }
 
-public class DadosVerificarAutocall
+// Modelos auxiliares para desserializar o contexto
+class ContextoComBarreiras
 {
-    public Guid OperacaoId { get; set; }
-    public decimal ValorCesta { get; set; }
-    public string TipoEstrutura { get; set; } = string.Empty;
-    public List<object>? Ativos { get; set; }
+    public List<BarreiraCtx> Barreiras { get; set; } = new();
 }
 
+class BarreiraCtx
+{
+    public Guid BarreiraId { get; set; }
+    public Guid OperacaoId { get; set; }
+    public decimal NivelBarreira { get; set; }
+    public string Condicao { get; set; } = string.Empty;
+}

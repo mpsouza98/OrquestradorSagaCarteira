@@ -32,6 +32,7 @@ public class OrquestradorSaga : IOrquestradorSaga
         {
             saga.Etapas[i].Id = Guid.NewGuid();
             saga.Etapas[i].SagaId = saga.Id;
+            saga.Etapas[i].Saga = saga;
             saga.Etapas[i].OrdemExecucao = i + 1;
             saga.Etapas[i].EstadoEtapa = EstadoEtapa.Pendente;
         }
@@ -148,12 +149,6 @@ public class OrquestradorSaga : IOrquestradorSaga
 
     public async Task CompensarSagaAsync(Saga saga)
     {
-        if (saga == null)
-        {
-            _logger.LogError("❌ Saga não pode ser nula para compensação");
-            return;
-        }
-
         saga.EstadoSaga = EstadoSaga.Compensando;
         saga.DataAtualizacao = DateTime.UtcNow;
         await _sagaRepository.AtualizarAsync(saga);

@@ -6,6 +6,7 @@ public interface IBarreiraRepository
 {
     Task<BarreiraOperacao?> ObterPorIdAsync(Guid id);
     Task<List<BarreiraOperacao>> ObterPorOperacaoAsync(Guid operacaoId);
+    Task<List<BarreiraOperacao>> ObterPorOperacoesAsync(IEnumerable<Guid> operacaoIds);
     Task<List<BarreiraOperacao>> ObterBarreirasAtivasPorTickerAsync(string ticker);
     Task<Guid> InserirAsync(BarreiraOperacao barreira);
     Task AtualizarAsync(BarreiraOperacao barreira);
