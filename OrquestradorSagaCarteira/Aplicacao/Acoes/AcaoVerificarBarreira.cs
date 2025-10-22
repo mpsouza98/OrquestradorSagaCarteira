@@ -1,19 +1,32 @@
-﻿using OrquestradorSagaCarteira.Dominio.Entidades;
+﻿using System.Text.Json;
+using Calculadora.Core.Services;
+using OrquestradorSagaCarteira.Dominio.Entidades;
 using OrquestradorSagaCarteira.Dominio.Interfaces;
-using OrquestradorSagaCarteira.Infraestrutura.Persistencia;
-using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 
 namespace OrquestradorSagaCarteira.Aplicacao.Acoes;
 
+/// <summary>
+/// Ação para verificar se uma barreira foi atingida
+/// </summary>
 public class AcaoVerificarBarreira : IAcaoSaga
 {
-    private readonly CarteiraDbContext _context;
+    private readonly IBarreiraRepository _barreiraRepository;
+    private readonly ICotacaoRepository _cotacaoRepository;
+    private readonly IOperacaoRepository _operacaoRepository;
+    private readonly CalculadoraBarreira _calculadora;
     private readonly ILogger<AcaoVerificarBarreira> _logger;
 
-    public AcaoVerificarBarreira(CarteiraDbContext context, ILogger<AcaoVerificarBarreira> logger)
+    public AcaoVerificarBarreira(
+        IBarreiraRepository barreiraRepository,
+        ICotacaoRepository cotacaoRepository,
+        IOperacaoRepository operacaoRepository,
+        CalculadoraBarreira calculadora,
+        ILogger<AcaoVerificarBarreira> logger)
     {
-        _context = context;
+        _barreiraRepository = barreiraRepository;
+        _cotacaoRepository = cotacaoRepository;
+        _operacaoRepository = operacaoRepository;
+        _calculadora = calculadora;
         _logger = logger;
     }
 
@@ -21,73 +34,66 @@ public class AcaoVerificarBarreira : IAcaoSaga
     {
         try
         {
-            var dados = JsonSerializer.Deserialize<DadosBarreira>(etapa.DadosEntrada ?? "{}");
-            
-            var barreira = await _context.Barreiras
-                .Include(b => b.Coe)
-                .ThenInclude(c => c.Ativos)
-                .FirstOrDefaultAsync(b => b.Id == dados!.BarreiraId);
+            var dados = JsonSerializer.Deserialize<DadosVerificacaoBarreira>(etapa.DadosEntrada ?? "{}");
+            if (dados == null)
+                return new ResultadoAcao { Sucesso = false, MensagemErro = "Dados de entrada inválidos" };
 
+            var barreira = await _barreiraRepository.ObterPorIdAsync(dados.BarreiraId);
             if (barreira == null)
                 return new ResultadoAcao { Sucesso = false, MensagemErro = "Barreira não encontrada" };
 
-            // Obter cotações dos ativos na data de observação
-            var tickersAtivos = barreira.Coe.Ativos.Select(a => a.TickerAtivo).ToList();
-            var cotacoes = await _context.Cotacoes
-                .Where(c => tickersAtivos.Contains(c.TickerAtivo) && c.Data == barreira.DataObservacao)
-                .ToListAsync();
+            var operacao = await _operacaoRepository.ObterPorIdAsync(barreira.OperacaoId);
+            if (operacao == null)
+                return new ResultadoAcao { Sucesso = false, MensagemErro = "Operação não encontrada" };
 
-            decimal valorCesta = 0;
-            foreach (var ativo in barreira.Coe.Ativos)
+            // Obter cotação inicial do ativo
+            var ativoInicial = operacao.Ativos.FirstOrDefault(a => a.Ticker == dados.Ticker);
+            if (ativoInicial == null)
+                return new ResultadoAcao { Sucesso = false, MensagemErro = $"Ativo {dados.Ticker} não encontrado na operação" };
+
+            // Verificar barreira
+            var resultado = _calculadora.VerificarBarreira(
+                ativoInicial.CotacaoInicial,
+                dados.CotacaoAtual,
+                barreira.NivelBarreira,
+                barreira.Condicao);
+
+            _logger.LogInformation(
+                "Barreira verificada - Ticker: {Ticker}, Atingida: {Atingida}, Taxa: {Taxa}%",
+                dados.Ticker, resultado.BarreiraAtingida, resultado.TaxaVariacao);
+
+            var dadosSaida = JsonSerializer.Serialize(new
             {
-                var cotacao = cotacoes.FirstOrDefault(c => c.TickerAtivo == ativo.TickerAtivo);
-                if (cotacao != null && ativo.Quantidade.HasValue)
-                {
-                    valorCesta += cotacao.PrecoFechamento * ativo.Quantidade.Value;
-                }
-            }
-
-            bool barreiraAtingida = false;
-            
-            // Verificar tipo de barreira
-            switch (barreira.TipoBarreira.ToString())
-            {
-                case "Autocall":
-                case "BestOf":
-                    barreiraAtingida = valorCesta >= barreira.NivelBarreira;
-                    break;
-                case "WorstOf":
-                    barreiraAtingida = valorCesta <= barreira.NivelBarreira;
-                    break;
-            }
-
-            _logger.LogInformation("Barreira {BarreiraId} verificada: Valor {Valor}, Nível {Nivel}, Atingida: {Atingida}", 
-                barreira.Id, valorCesta, barreira.NivelBarreira, barreiraAtingida);
+                BarreiraAtingida = resultado.BarreiraAtingida,
+                resultado.ValorObservado,
+                resultado.TaxaVariacao,
+                Ticker = dados.Ticker,
+                BarreiraId = barreira.Id
+            });
 
             return new ResultadoAcao
             {
                 Sucesso = true,
-                DadosSaida = JsonSerializer.Serialize(new 
-                { 
-                    BarreiraAtingida = barreiraAtingida,
-                    ValorCesta = valorCesta
-                })
+                DadosSaida = dadosSaida
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao verificar barreira");
+            _logger.LogError(ex, "Erro ao verificar barreira na etapa {EtapaId}", etapa.Id);
             return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
         }
     }
 
-    public Task<ResultadoCompensacao> CompensarAsync(EtapaSaga etapa)
+    public async Task<ResultadoCompensacao> CompensarAsync(EtapaSaga etapa)
     {
-        return Task.FromResult(new ResultadoCompensacao { Sucesso = true });
+        // Verificação de barreira não requer compensação
+        return await Task.FromResult(new ResultadoCompensacao { Sucesso = true });
     }
+}
 
-    private class DadosBarreira
-    {
-        public Guid BarreiraId { get; set; }
-    }
+public class DadosVerificacaoBarreira
+{
+    public Guid BarreiraId { get; set; }
+    public string Ticker { get; set; } = string.Empty;
+    public decimal CotacaoAtual { get; set; }
 }

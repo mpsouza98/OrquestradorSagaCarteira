@@ -1,28 +1,23 @@
-﻿using Microsoft.EntityFrameworkCore;
-using OrquestradorSagaCarteira.Dominio.Entidades;
+﻿using OrquestradorSagaCarteira.Dominio.Entidades;
 using OrquestradorSagaCarteira.Dominio.Enums;
 using OrquestradorSagaCarteira.Dominio.Interfaces;
-using OrquestradorSagaCarteira.Infraestrutura.Persistencia;
-using OrquestradorSagaCarteira.Aplicacao.Acoes;
 
 namespace OrquestradorSagaCarteira.Aplicacao.Servicos;
 
 public class OrquestradorSaga : IOrquestradorSaga
 {
-    private readonly CarteiraDbContext _context;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly ISagaRepository _sagaRepository;
     private readonly ILogger<OrquestradorSaga> _logger;
-    private readonly Dictionary<TipoAcao, Type> _mapaAcoes;
+    private readonly Dictionary<TipoAcao, IAcaoSaga> _mapaAcoes;
 
     public OrquestradorSaga(
-        CarteiraDbContext context, 
-        IServiceProvider serviceProvider,
-        ILogger<OrquestradorSaga> logger)
+        ISagaRepository sagaRepository,
+        ILogger<OrquestradorSaga> logger,
+        IEnumerable<IAcaoSaga> acoes)
     {
-        _context = context;
-        _serviceProvider = serviceProvider;
+        _sagaRepository = sagaRepository;
         _logger = logger;
-        _mapaAcoes = InicializarMapaAcoes();
+        _mapaAcoes = InicializarMapaAcoes(acoes);
     }
 
     public async Task<Saga> IniciarSagaAsync(Saga saga)
@@ -41,10 +36,9 @@ public class OrquestradorSaga : IOrquestradorSaga
             saga.Etapas[i].EstadoEtapa = EstadoEtapa.Pendente;
         }
 
-        _context.Sagas.Add(saga);
-        await _context.SaveChangesAsync();
+        await _sagaRepository.InserirAsync(saga);
 
-        _logger.LogInformation("Saga {SagaId} do tipo {TipoSaga} iniciada com {NumEtapas} etapas",
+        _logger.LogInformation("📋 Saga {SagaId} iniciada - Tipo: {TipoSaga}, Etapas: {NumEtapas}",
             saga.Id, saga.TipoSaga, saga.Etapas.Count);
 
         // Iniciar execução
@@ -55,13 +49,11 @@ public class OrquestradorSaga : IOrquestradorSaga
 
     public async Task ExecutarProximaEtapaAsync(Guid sagaId)
     {
-        var saga = await _context.Sagas
-            .Include(s => s.Etapas)
-            .FirstOrDefaultAsync(s => s.Id == sagaId);
+        var saga = await _sagaRepository.ObterPorIdAsync(sagaId);
 
         if (saga == null)
         {
-            _logger.LogError("Saga {SagaId} não encontrada", sagaId);
+            _logger.LogError("❌ Saga {SagaId} não encontrada", sagaId);
             return;
         }
 
@@ -77,9 +69,9 @@ public class OrquestradorSaga : IOrquestradorSaga
             saga.EstadoSaga = EstadoSaga.Concluida;
             saga.DataFinalizacao = DateTime.UtcNow;
             saga.DataAtualizacao = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await _sagaRepository.AtualizarAsync(saga);
 
-            _logger.LogInformation("Saga {SagaId} concluída com sucesso", sagaId);
+            _logger.LogInformation("✅ Saga {SagaId} concluída com sucesso", sagaId);
             return;
         }
 
@@ -88,10 +80,25 @@ public class OrquestradorSaga : IOrquestradorSaga
         proximaEtapa.DataInicio = DateTime.UtcNow;
         saga.EstadoSaga = EstadoSaga.EmExecucao;
         saga.DataAtualizacao = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await _sagaRepository.AtualizarAsync(saga);
+
+        _logger.LogInformation("▶️ Executando etapa {Ordem}/{Total} - {NomeEtapa}",
+            proximaEtapa.OrdemExecucao, saga.Etapas.Count, proximaEtapa.NomeEtapa);
 
         try
         {
+            // Transferir dados da etapa anterior se necessário
+            if (proximaEtapa.OrdemExecucao > 1)
+            {
+                var etapaAnterior = saga.Etapas
+                    .FirstOrDefault(e => e.OrdemExecucao == proximaEtapa.OrdemExecucao - 1);
+                
+                if (etapaAnterior?.DadosSaida != null && proximaEtapa.DadosEntrada == "{}")
+                {
+                    proximaEtapa.DadosEntrada = etapaAnterior.DadosSaida;
+                }
+            }
+
             var acao = ObterAcao(proximaEtapa.TipoAcao);
             var resultado = await acao.ExecutarAsync(proximaEtapa);
 
@@ -100,10 +107,9 @@ public class OrquestradorSaga : IOrquestradorSaga
                 proximaEtapa.EstadoEtapa = EstadoEtapa.Concluida;
                 proximaEtapa.DataFinalizacao = DateTime.UtcNow;
                 proximaEtapa.DadosSaida = resultado.DadosSaida;
-                await _context.SaveChangesAsync();
+                await _sagaRepository.AtualizarAsync(saga);
 
-                _logger.LogInformation("Etapa {EtapaId} da Saga {SagaId} concluída com sucesso",
-                    proximaEtapa.Id, sagaId);
+                _logger.LogInformation("✔️ Etapa {NomeEtapa} concluída", proximaEtapa.NomeEtapa);
 
                 // Executar próxima etapa
                 await ExecutarProximaEtapaAsync(sagaId);
@@ -115,10 +121,10 @@ public class OrquestradorSaga : IOrquestradorSaga
                 proximaEtapa.DataFinalizacao = DateTime.UtcNow;
                 proximaEtapa.MensagemErro = resultado.MensagemErro;
                 proximaEtapa.Tentativas++;
-                await _context.SaveChangesAsync();
+                await _sagaRepository.AtualizarAsync(saga);
 
-                _logger.LogError("Etapa {EtapaId} da Saga {SagaId} falhou: {Erro}",
-                    proximaEtapa.Id, sagaId, resultado.MensagemErro);
+                _logger.LogError("❌ Etapa {NomeEtapa} falhou: {Erro}",
+                    proximaEtapa.NomeEtapa, resultado.MensagemErro);
 
                 await CompensarSagaAsync(sagaId);
             }
@@ -129,10 +135,9 @@ public class OrquestradorSaga : IOrquestradorSaga
             proximaEtapa.DataFinalizacao = DateTime.UtcNow;
             proximaEtapa.MensagemErro = ex.Message;
             proximaEtapa.Tentativas++;
-            await _context.SaveChangesAsync();
+            await _sagaRepository.AtualizarAsync(saga);
 
-            _logger.LogError(ex, "Erro ao executar etapa {EtapaId} da Saga {SagaId}",
-                proximaEtapa.Id, sagaId);
+            _logger.LogError(ex, "❌ Erro ao executar etapa {NomeEtapa}", proximaEtapa.NomeEtapa);
 
             await CompensarSagaAsync(sagaId);
         }
@@ -140,22 +145,19 @@ public class OrquestradorSaga : IOrquestradorSaga
 
     public async Task CompensarSagaAsync(Guid sagaId)
     {
-        var saga = await _context.Sagas
-            .Include(s => s.Etapas)
-            .ThenInclude(e => e.Compensacoes)
-            .FirstOrDefaultAsync(s => s.Id == sagaId);
+        var saga = await _sagaRepository.ObterPorIdAsync(sagaId);
 
         if (saga == null)
         {
-            _logger.LogError("Saga {SagaId} não encontrada para compensação", sagaId);
+            _logger.LogError("❌ Saga {SagaId} não encontrada para compensação", sagaId);
             return;
         }
 
         saga.EstadoSaga = EstadoSaga.Compensando;
         saga.DataAtualizacao = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await _sagaRepository.AtualizarAsync(saga);
 
-        _logger.LogWarning("Iniciando compensação da Saga {SagaId}", sagaId);
+        _logger.LogWarning("⚠️ Iniciando compensação da Saga {SagaId}", sagaId);
 
         // Compensar etapas na ordem inversa
         var etapasParaCompensar = saga.Etapas
@@ -166,124 +168,86 @@ public class OrquestradorSaga : IOrquestradorSaga
         foreach (var etapa in etapasParaCompensar)
         {
             etapa.EstadoEtapa = EstadoEtapa.Compensando;
-            await _context.SaveChangesAsync();
+            await _sagaRepository.AtualizarAsync(saga);
 
             try
             {
                 var acao = ObterAcao(etapa.TipoAcao);
                 var resultado = await acao.CompensarAsync(etapa);
 
-                var compensacao = new HistoricoCompensacao
-                {
-                    Id = Guid.NewGuid(),
-                    EtapaSagaId = etapa.Id,
-                    TipoCompensacao = etapa.TipoAcao.ToString(),
-                    EstadoCompensacao = resultado.Sucesso ? "Concluida" : "Falhou",
-                    DadosCompensacao = resultado.DadosCompensacao,
-                    DataInicio = DateTime.UtcNow,
-                    DataFinalizacao = DateTime.UtcNow,
-                    MensagemErro = resultado.MensagemErro
-                };
-
-                _context.HistoricosCompensacao.Add(compensacao);
-
                 if (resultado.Sucesso)
                 {
                     etapa.EstadoEtapa = EstadoEtapa.Compensada;
-                    _logger.LogInformation("Etapa {EtapaId} compensada com sucesso", etapa.Id);
+                    _logger.LogInformation("↩️ Etapa {NomeEtapa} compensada", etapa.NomeEtapa);
                 }
                 else
                 {
                     etapa.EstadoEtapa = EstadoEtapa.FalhaCompensacao;
-                    _logger.LogError("Falha ao compensar etapa {EtapaId}: {Erro}",
-                        etapa.Id, resultado.MensagemErro);
+                    _logger.LogError("❌ Falha ao compensar etapa {NomeEtapa}: {Erro}",
+                        etapa.NomeEtapa, resultado.MensagemErro);
                 }
 
-                await _context.SaveChangesAsync();
+                await _sagaRepository.AtualizarAsync(saga);
             }
             catch (Exception ex)
             {
                 etapa.EstadoEtapa = EstadoEtapa.FalhaCompensacao;
-                
-                var compensacao = new HistoricoCompensacao
-                {
-                    Id = Guid.NewGuid(),
-                    EtapaSagaId = etapa.Id,
-                    TipoCompensacao = etapa.TipoAcao.ToString(),
-                    EstadoCompensacao = "Falhou",
-                    DataInicio = DateTime.UtcNow,
-                    DataFinalizacao = DateTime.UtcNow,
-                    MensagemErro = ex.Message
-                };
+                await _sagaRepository.AtualizarAsync(saga);
 
-                _context.HistoricosCompensacao.Add(compensacao);
-                await _context.SaveChangesAsync();
-
-                _logger.LogError(ex, "Erro ao compensar etapa {EtapaId}", etapa.Id);
+                _logger.LogError(ex, "❌ Erro ao compensar etapa {NomeEtapa}", etapa.NomeEtapa);
             }
         }
 
         saga.EstadoSaga = EstadoSaga.Compensada;
         saga.DataFinalizacao = DateTime.UtcNow;
         saga.DataAtualizacao = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await _sagaRepository.AtualizarAsync(saga);
 
-        _logger.LogWarning("Saga {SagaId} compensada", sagaId);
+        _logger.LogWarning("⚠️ Saga {SagaId} compensada", sagaId);
     }
 
     public async Task<Saga?> ObterSagaAsync(Guid sagaId)
     {
-        return await _context.Sagas
-            .Include(s => s.Etapas)
-            .ThenInclude(e => e.Compensacoes)
-            .FirstOrDefaultAsync(s => s.Id == sagaId);
+        return await _sagaRepository.ObterPorIdAsync(sagaId);
     }
 
     public async Task<List<Saga>> ListarSagasAsync(int pagina = 1, int tamanhoPagina = 50)
     {
-        return await _context.Sagas
-            .Include(s => s.Etapas)
-            .OrderByDescending(s => s.DataCriacao)
-            .Skip((pagina - 1) * tamanhoPagina)
-            .Take(tamanhoPagina)
-            .ToListAsync();
+        return await _sagaRepository.ListarAsync(pagina, tamanhoPagina);
     }
 
     private IAcaoSaga ObterAcao(TipoAcao tipoAcao)
     {
-        if (_mapaAcoes.TryGetValue(tipoAcao, out var tipoImplementacao))
+        if (_mapaAcoes.TryGetValue(tipoAcao, out var acao))
         {
-            var acao = _serviceProvider.GetService(tipoImplementacao) as IAcaoSaga;
-            if (acao != null)
-                return acao;
+            return acao;
         }
 
         throw new InvalidOperationException($"Ação não encontrada para o tipo: {tipoAcao}");
     }
 
-    private Dictionary<TipoAcao, Type> InicializarMapaAcoes()
+    private static Dictionary<TipoAcao, IAcaoSaga> InicializarMapaAcoes(IEnumerable<IAcaoSaga> acoes)
     {
-        // Mapear cada tipo de ação para sua implementação
-        return new Dictionary<TipoAcao, Type>
+        var mapa = new Dictionary<TipoAcao, IAcaoSaga>();
+        
+        foreach (var acao in acoes)
         {
-            { TipoAcao.ProcessarCotacao, typeof(AcaoProcessarCotacao) },
-            { TipoAcao.CalcularMtmRendaFixa, typeof(AcaoCalcularMtmRendaFixa) },
-            { TipoAcao.CalcularMtmRendaVariavel, typeof(AcaoCalcularMtmRendaVariavel) },
-            { TipoAcao.ConsolidarMtm, typeof(AcaoConsolidarMtm) },
-            { TipoAcao.CalcularValorizacaoContabil, typeof(AcaoCalcularValorizacaoContabil) },
-            { TipoAcao.AtualizarPosicaoCliente, typeof(AcaoAtualizarPosicaoCliente) },
-            { TipoAcao.ProcessarSplit, typeof(AcaoProcessarSplit) },
-            { TipoAcao.ProcessarInsplit, typeof(AcaoProcessarInsplit) },
-            { TipoAcao.AjustarPosicoes, typeof(AcaoAjustarPosicoes) },
-            { TipoAcao.VerificarBarreira, typeof(AcaoVerificarBarreira) },
-            { TipoAcao.ProcessarAtingimentoBarreira, typeof(AcaoProcessarAtingimentoBarreira) },
-            { TipoAcao.IniciarLiquidacao, typeof(AcaoIniciarLiquidacao) },
-            { TipoAcao.CalcularValorLiquidacao, typeof(AcaoCalcularValorLiquidacao) },
-            { TipoAcao.LiquidarPosicoes, typeof(AcaoLiquidarPosicoes) },
-            { TipoAcao.EncerrarCoe, typeof(AcaoEncerrarCoe) },
-            { TipoAcao.LancarContabilidade, typeof(AcaoLancarContabilidade) },
-            { TipoAcao.RealizarAjusteContabil, typeof(AcaoRealizarAjusteContabil) }
-        };
+            var tipoAcao = acao.GetType().Name switch
+            {
+                nameof(Acoes.AcaoVerificarBarreira) => TipoAcao.VerificarBarreira,
+                nameof(Acoes.AcaoPersistirBarreira) => TipoAcao.PersistirBarreira,
+                nameof(Acoes.AcaoNotificarBarreiraAtingida) => TipoAcao.NotificarBarreiraAtingida,
+                nameof(Acoes.AcaoAgregarCesta) => TipoAcao.AgregarCesta,
+                nameof(Acoes.AcaoVerificarAutoCall) => TipoAcao.VerificarAutoCall,
+                nameof(Acoes.AcaoPersistirAutoCall) => TipoAcao.PersistirAutoCall,
+                nameof(Acoes.AcaoNotificarAutoCall) => TipoAcao.NotificarAutoCall,
+                nameof(Acoes.AcaoAgendarDesfazimentoOperacao) => TipoAcao.AgendarDesfazimentoOperacao,
+                _ => throw new InvalidOperationException($"Ação não mapeada: {acao.GetType().Name}")
+            };
+            
+            mapa[tipoAcao] = acao;
+        }
+
+        return mapa;
     }
 }
-

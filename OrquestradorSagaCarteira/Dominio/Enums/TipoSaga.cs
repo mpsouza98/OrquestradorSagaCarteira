@@ -2,11 +2,5 @@
 
 public enum TipoSaga
 {
-    ValorizacaoMtm,
-    AtivacaoAutocall,
-    ProcessamentoEventoCorporativo,
-    AtualizacaoPosicaoCliente,
-    ProcessamentoCotacao,
-    ProcessamentoBarreira
+    ProcessamentoAutocall
 }
-

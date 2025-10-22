@@ -1,60 +1,64 @@
-using Microsoft.EntityFrameworkCore;
 using OrquestradorSagaCarteira.Aplicacao.Acoes;
 using OrquestradorSagaCarteira.Aplicacao.Observadores;
 using OrquestradorSagaCarteira.Aplicacao.Servicos;
 using OrquestradorSagaCarteira.Dominio.Interfaces;
 using OrquestradorSagaCarteira.Infraestrutura.Persistencia;
+using OrquestradorSagaCarteira.Infraestrutura.Persistencia.Repositories;
+using Calculadora.Core.Services;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuração do banco de dados MySQL
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<CarteiraDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+// Configuração do DbConnectionFactory
+builder.Services.AddSingleton<DbConnectionFactory>();
 
-// Registrar serviços
+// Registrar Repositories (Scoped para garantir uma conexão por request)
+builder.Services.AddScoped<ISagaRepository, SagaRepository>();
+builder.Services.AddScoped<IOperacaoRepository, OperacaoRepository>();
+builder.Services.AddScoped<IBarreiraRepository, BarreiraRepository>();
+builder.Services.AddScoped<ICotacaoRepository, CotacaoRepository>();
+builder.Services.AddScoped<IEventoBarreiraRepository, EventoBarreiraRepository>();
+builder.Services.AddScoped<IEventoAutocallRepository, EventoAutocallRepository>();
+builder.Services.AddScoped<ILiquidacaoRepository, LiquidacaoRepository>();
+
+// Registrar serviços da Calculadora
+builder.Services.AddScoped<CalculadoraBarreira>();
+builder.Services.AddScoped<CalculadoraAutocall>();
+
+// Registrar serviços de aplicação
 builder.Services.AddScoped<IOrquestradorSaga, OrquestradorSaga>();
 builder.Services.AddSingleton<IPublicadorEventos, PublicadorEventos>();
 
-// Registrar todas as ações da saga
-builder.Services.AddScoped<AcaoProcessarCotacao>();
-builder.Services.AddScoped<AcaoCalcularMtmRendaFixa>();
-builder.Services.AddScoped<AcaoCalcularMtmRendaVariavel>();
-builder.Services.AddScoped<AcaoConsolidarMtm>();
-builder.Services.AddScoped<AcaoCalcularValorizacaoContabil>();
-builder.Services.AddScoped<AcaoAtualizarPosicaoCliente>();
-builder.Services.AddScoped<AcaoProcessarSplit>();
-builder.Services.AddScoped<AcaoProcessarInsplit>();
-builder.Services.AddScoped<AcaoAjustarPosicoes>();
-builder.Services.AddScoped<AcaoVerificarBarreira>();
-builder.Services.AddScoped<AcaoProcessarAtingimentoBarreira>();
-builder.Services.AddScoped<AcaoIniciarLiquidacao>();
-builder.Services.AddScoped<AcaoCalcularValorLiquidacao>();
-builder.Services.AddScoped<AcaoLiquidarPosicoes>();
-builder.Services.AddScoped<AcaoEncerrarCoe>();
-builder.Services.AddScoped<AcaoLancarContabilidade>();
-builder.Services.AddScoped<AcaoRealizarAjusteContabil>();
+// Registrar todas as ações da saga como Transient
+builder.Services.AddTransient<IAcaoSaga, AcaoVerificarBarreira>();
+builder.Services.AddTransient<IAcaoSaga, AcaoPersistirBarreira>();
+builder.Services.AddTransient<IAcaoSaga, AcaoNotificarBarreiraAtingida>();
+builder.Services.AddTransient<IAcaoSaga, AcaoAgregarCesta>();
+builder.Services.AddTransient<IAcaoSaga, AcaoVerificarAutoCall>();
+builder.Services.AddTransient<IAcaoSaga, AcaoPersistirAutoCall>();
+builder.Services.AddTransient<IAcaoSaga, AcaoNotificarAutoCall>();
+builder.Services.AddTransient<IAcaoSaga, AcaoAgendarDesfazimentoOperacao>();
 
-// Registrar observadores
-builder.Services.AddSingleton<ObservadorCotacao>();
-builder.Services.AddSingleton<ObservadorMtm>();
+// Registrar observadores como Singleton (precisam persistir durante toda a aplicação)
 builder.Services.AddSingleton<ObservadorBarreira>();
-builder.Services.AddSingleton<ObservadorEventoCorporativo>();
+builder.Services.AddSingleton<ObservadorAutoCall>();
+builder.Services.AddSingleton<ObservadorDesfazimentoOperacao>();
 
 // Configurar controllers e Swagger
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true;
     });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { 
-        Title = "Orquestrador Saga Carteira COE", 
+    c.SwaggerDoc("v1", new OpenApiInfo { 
+        Title = "Orquestrador Saga Autocall", 
         Version = "v1",
-        Description = "API para gestão de eventos de carteira COE usando padrão Saga"
+        Description = "API para gestão de operações Autocall usando padrão Saga Orquestrado"
     });
 });
 
@@ -64,34 +68,13 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Saga Carteira COE v1"));
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Saga Autocall v1"));
 }
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
-// Inicializar observadores
-using (var scope = app.Services.CreateScope())
-{
-    var publicador = scope.ServiceProvider.GetRequiredService<IPublicadorEventos>();
-    var observadorCotacao = scope.ServiceProvider.GetRequiredService<ObservadorCotacao>();
-    var observadorMtm = scope.ServiceProvider.GetRequiredService<ObservadorMtm>();
-    var observadorBarreira = scope.ServiceProvider.GetRequiredService<ObservadorBarreira>();
-    var observadorEventoCorporativo = scope.ServiceProvider.GetRequiredService<ObservadorEventoCorporativo>();
-
-    // Inscrever observadores nos tópicos
-    await publicador.InscreverObservadorAsync("topico.cotacoes", observadorCotacao);
-    await publicador.InscreverObservadorAsync("topico.mtm", observadorMtm);
-    await publicador.InscreverObservadorAsync("topico.barreiras", observadorBarreira);
-    await publicador.InscreverObservadorAsync("topico.eventos-corporativos", observadorEventoCorporativo);
-
-    app.Logger.LogInformation("Observadores inscritos nos tópicos");
-}
+app.Logger.LogInformation("🚀 Aplicação Orquestrador Saga Autocall iniciada");
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

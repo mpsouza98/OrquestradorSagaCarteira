@@ -2,35 +2,17 @@
 
 public enum TipoAcao
 {
-    // Ações de Cotação
-    ProcessarCotacao,
-    
-    // Ações de MTM
-    CalcularMtmRendaFixa,
-    CalcularMtmRendaVariavel,
-    ConsolidarMtm,
-    
-    // Ações de Valorização
-    CalcularValorizacaoContabil,
-    AtualizarPosicaoCliente,
-    
-    // Ações de Evento Corporativo
-    ProcessarSplit,
-    ProcessarInsplit,
-    AjustarPosicoes,
-    
     // Ações de Barreira
     VerificarBarreira,
-    ProcessarAtingimentoBarreira,
+    PersistirBarreira,
+    NotificarBarreiraAtingida,
     
-    // Ações de Autocall
-    IniciarLiquidacao,
-    CalcularValorLiquidacao,
-    LiquidarPosicoes,
-    EncerrarCoe,
+    // Ações de AutoCall
+    AgregarCesta,
+    VerificarAutoCall,
+    PersistirAutoCall,
+    NotificarAutoCall,
     
-    // Ações Contábeis
-    LancarContabilidade,
-    RealizarAjusteContabil
+    // Ações de Liquidação
+    AgendarDesfazimentoOperacao
 }
-
