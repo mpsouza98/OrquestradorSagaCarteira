@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using Calculadora.Core.Models;
 using Calculadora.Core.Services;
 using OrquestradorSagaCarteira.Dominio.Entidades;
 using OrquestradorSagaCarteira.Dominio.Interfaces;
@@ -6,7 +7,7 @@ using OrquestradorSagaCarteira.Dominio.Interfaces;
 namespace OrquestradorSagaCarteira.Aplicacao.Acoes;
 
 /// <summary>
-/// Ação para verificar se uma barreira foi atingida
+/// Ação para verificar se barreiras foram atingidas (processamento em lote)
 /// </summary>
 public class AcaoVerificarBarreira : IAcaoSaga
 {
@@ -21,68 +22,67 @@ public class AcaoVerificarBarreira : IAcaoSaga
         _logger = logger;
     }
 
-    public async Task<ResultadoAcao> ExecutarAsync(EtapaSaga etapa)
+    public Task<ResultadoAcao> ExecutarAsync(EtapaSaga etapa)
     {
         try
         {
             var dados = JsonSerializer.Deserialize<DadosVerificacaoBarreira>(etapa.DadosEntrada ?? "{}");
-            if (dados == null)
-                return new ResultadoAcao { Sucesso = false, MensagemErro = "Dados de entrada inválidos" };
+            if (dados == null || dados.Barreiras.Count == 0)
+                return Task.FromResult(new ResultadoAcao { Sucesso = false, MensagemErro = "Nenhuma barreira para verificar" });
 
-            _logger.LogInformation("🔍 Verificando barreira - Ticker: {Ticker}, BarreiraId: {BarreiraId}", 
-                dados.Ticker, dados.BarreiraId);
+            _logger.LogInformation("🔍 Verificando {Qtd} barreiras em lote - Cotação: {Cotacao}", 
+                dados.Barreiras.Count, dados.CotacaoAtual);
 
-            // Estratégia de busca da barreira:
-            // 1. Por ID (se vier preenchido)
-            // 2. Por ticker + nivel_barreira (chave composta)
-            // 3. Por ticker + data (fallback)
-            
-            BarreiraOperacao? barreira = null;
-            
-            // Tentativa 1: Buscar por ID
-            if (dados.BarreiraId != Guid.Empty)
+            var resultados = new List<ResultadoVerificacaoBarreira>();
+
+            foreach (var barreiraInfo in dados.Barreiras)
             {
-                barreira = await _barreiraRepository.ObterPorIdAsync(dados.BarreiraId);
-                if (barreira != null)
-                    _logger.LogInformation("✓ Barreira encontrada por ID: {BarreiraId}", dados.BarreiraId);
+                var resultado = CalculadoraBarreira.VerificarBarreira(
+                    barreiraInfo.NivelBarreira,
+                    dados.CotacaoAtual,
+                    barreiraInfo.NivelBarreira,
+                    barreiraInfo.Condicao);
+
+                resultados.Add(new ResultadoVerificacaoBarreira
+                {
+                    BarreiraId = barreiraInfo.BarreiraId,
+                    BarreiraAtingida = resultado.BarreiraAtingida,
+                    ValorObservado = resultado.ValorObservado,
+                    NivelBarreira = resultado.NivelBarreira,
+                    TaxaVariacao = resultado.TaxaVariacao,
+                    Condicao = resultado.Condicao
+                });
+
+                _logger.LogInformation(
+                    "📊 Barreira {BarreiraId} - Atingida: {Atingida}, Taxa: {Taxa}%",
+                    barreiraInfo.BarreiraId, resultado.BarreiraAtingida, resultado.TaxaVariacao);
             }
 
-            if (barreira == null)
-            {
-                _logger.LogError("❌ Barreira não encontrada - Ticker: {Ticker}, Nivel: {Nivel}, Data: {Data}", 
-                    dados.Ticker, dados.NivelBarreira, dados.DataReferencia);
-                return new ResultadoAcao { Sucesso = false, MensagemErro = $"Barreira não encontrada para o ticker {dados.Ticker}" };
-            }
-
-            var resultado = CalculadoraBarreira.VerificarBarreira(
-                barreira.NivelBarreira,
-                dados.CotacaoAtual,
-                barreira.NivelBarreira,
-                barreira.Condicao);
-
+            var barreiraAtingidas = resultados.Where(r => r.BarreiraAtingida).ToList();
+            
             _logger.LogInformation(
-                "✔️ Barreira verificada - Ticker: {Ticker}, Atingida: {Atingida}, Taxa: {Taxa}%",
-                dados.Ticker, resultado.BarreiraAtingida, resultado.TaxaVariacao);
+                "✔️ Verificação concluída - {Total} barreiras verificadas, {Atingidas} atingidas",
+                resultados.Count, barreiraAtingidas.Count);
 
             var dadosSaida = JsonSerializer.Serialize(new
             {
-                BarreiraAtingida = resultado.BarreiraAtingida,
-                resultado.ValorObservado,
-                resultado.TaxaVariacao,
+                TotalVerificadas = resultados.Count,
+                TotalAtingidas = barreiraAtingidas.Count,
+                Resultados = barreiraAtingidas,
                 Ticker = dados.Ticker,
-                BarreiraId = barreira.Id
+                CotacaoAtual = dados.CotacaoAtual
             });
 
-            return new ResultadoAcao
+            return Task.FromResult(new ResultadoAcao
             {
                 Sucesso = true,
                 DadosSaida = dadosSaida
-            };
+            });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Erro ao verificar barreira na etapa {EtapaId}", etapa.Id);
-            return new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message };
+            _logger.LogError(ex, "❌ Erro ao verificar barreiras na etapa {EtapaId}", etapa.Id);
+            return Task.FromResult(new ResultadoAcao { Sucesso = false, MensagemErro = ex.Message });
         }
     }
 
@@ -95,9 +95,16 @@ public class AcaoVerificarBarreira : IAcaoSaga
 
 public class DadosVerificacaoBarreira
 {
-    public Guid BarreiraId { get; set; }
     public string Ticker { get; set; } = string.Empty;
     public decimal CotacaoAtual { get; set; }
     public DateTime DataReferencia { get; set; }
-    public decimal? NivelBarreira { get; set; }
+    public List<BarreiraParaVerificar> Barreiras { get; set; } = new();
+}
+
+public class BarreiraParaVerificar
+{
+    public Guid BarreiraId { get; set; }
+    public Guid OperacaoId { get; set; }
+    public decimal NivelBarreira { get; set; }
+    public string Condicao { get; set; } = string.Empty;
 }

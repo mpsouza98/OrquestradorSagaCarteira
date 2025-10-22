@@ -103,9 +103,13 @@ public class OrquestradorSaga : IOrquestradorSaga
                 var etapaAnterior = saga.Etapas
                     .FirstOrDefault(e => e.OrdemExecucao == proximaEtapa.OrdemExecucao - 1);
                 
-                if (etapaAnterior?.DadosSaida != null && proximaEtapa.DadosEntrada == "{}")
+                if (etapaAnterior?.DadosSaida != null && (proximaEtapa.DadosEntrada == "{}" || string.IsNullOrEmpty(proximaEtapa.DadosEntrada)))
                 {
-                    proximaEtapa.DadosEntrada = etapaAnterior.DadosSaida;
+                    // Transformar dados entre etapas conforme necessário
+                    proximaEtapa.DadosEntrada = TransformarDadosEntreEtapas(
+                        etapaAnterior.TipoAcao, 
+                        proximaEtapa.TipoAcao, 
+                        etapaAnterior.DadosSaida);
                 }
             }
 
@@ -259,5 +263,47 @@ public class OrquestradorSaga : IOrquestradorSaga
         }
 
         return mapa;
+    }
+
+    private string TransformarDadosEntreEtapas(TipoAcao tipoAcaoOrigem, TipoAcao tipoAcaoDestino, string dadosEntrada)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(dadosEntrada);
+            var root = doc.RootElement;
+
+            // Transformação: VerificarBarreira -> PersistirBarreira
+            if (tipoAcaoOrigem == TipoAcao.VerificarBarreira && tipoAcaoDestino == TipoAcao.PersistirBarreira)
+            {
+                var resultados = root.GetProperty("Resultados");
+                var fonte = root.TryGetProperty("Ticker", out var tickerProp) ? tickerProp.GetString() : "";
+                
+                return System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    BarreirasAtingidas = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(resultados.GetRawText()),
+                    Fonte = fonte
+                });
+            }
+
+            // Transformação: PersistirBarreira -> NotificarBarreiraAtingida
+            if (tipoAcaoOrigem == TipoAcao.PersistirBarreira && tipoAcaoDestino == TipoAcao.NotificarBarreiraAtingida)
+            {
+                var eventos = root.GetProperty("Eventos");
+                
+                return System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    Eventos = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(eventos.GetRawText())
+                });
+            }
+
+            // Por padrão, retorna os dados sem transformação
+            return dadosEntrada;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Erro ao transformar dados entre etapas {Origem} -> {Destino}. Usando dados originais.", 
+                tipoAcaoOrigem, tipoAcaoDestino);
+            return dadosEntrada;
+        }
     }
 }

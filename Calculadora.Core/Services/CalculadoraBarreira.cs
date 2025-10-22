@@ -20,8 +20,8 @@ public class CalculadoraBarreira
         
         var barreiraAtingida = condicao.ToUpper() switch
         {
-            "UP" => taxaVariacao >= nivelBarreira,
-            "DOWN" => taxaVariacao <= nivelBarreira,
+            "UP" => taxaVariacao >= 0,
+            "DOWN" => taxaVariacao <= 0,
             _ => false
         };
 
